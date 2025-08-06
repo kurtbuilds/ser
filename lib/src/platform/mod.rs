@@ -61,3 +61,8 @@ pub fn get_service(name: &str) -> Result<ServiceRef> {
 
     Err(anyhow::anyhow!("Service '{}' not found", name))
 }
+
+pub fn resolve_service_name(name: &str) -> Result<String> {
+    let service = get_service(name)?;
+    Ok(service.name)
+}

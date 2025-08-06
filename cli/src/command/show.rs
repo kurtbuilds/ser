@@ -14,7 +14,7 @@ impl Show {
         let resolved_name = platform::resolve_service_name(&self.name)?;
         let details = platform::get_service_details(&resolved_name)?;
 
-        println!("Service: {}", details.name);
+        println!("Service: {}", details.service.name);
         println!("Path: {}", details.path);
         println!(
             "Status: {}",
@@ -26,25 +26,25 @@ impl Show {
         );
         println!("Enabled: {}", if details.enabled { "Yes" } else { "No" });
 
-        if let Some(ref program) = details.program {
-            println!("Program: {}", program);
+        if !details.service.program.is_empty() {
+            println!("Program: {}", details.service.program);
         }
 
-        if !details.arguments.is_empty() {
-            println!("Arguments: {}", details.arguments.join(" "));
+        if !details.service.arguments.is_empty() {
+            println!("Arguments: {}", details.service.arguments.join(" "));
         }
 
-        if let Some(ref wd) = details.working_directory {
+        if let Some(ref wd) = details.service.working_directory {
             println!("Working Directory: {}", wd);
         }
 
         println!(
             "Run at Load: {}",
-            if details.run_at_load { "Yes" } else { "No" }
+            if details.service.run_at_load { "Yes" } else { "No" }
         );
         println!(
             "Keep Alive: {}",
-            if details.keep_alive { "Yes" } else { "No" }
+            if details.service.keep_alive { "Yes" } else { "No" }
         );
 
         Ok(())

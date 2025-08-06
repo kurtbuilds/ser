@@ -5,6 +5,7 @@ use std::process::Command;
 use crate::{ServiceDetails, FsServiceDetails};
 use std::process::Command;
 use super::{Config, ServiceRef};
+pub use crate::systemd::generate_file;
 
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();

@@ -1,53 +1,42 @@
 use crate::ServiceDetails;
-use anyhow::Result;
+use anyhow::{Context, Result};
+use plist::Value;
 
-pub fn parse_plist(content: &str) -> Result<ServiceDetails> {
+pub fn parse_plist(_content: &str) -> Result<ServiceDetails> {
     unimplemented!()
 }
 
-pub fn create_plist(service: &ServiceDetails) -> Result<String> {
-    let mut unit_content = String::new();
-    unit_content.push_str("[Unit]\n");
-    unit_content.push_str(&format!("Description={}\n", service.name));
-    unit_content.push_str("\n[Service]\n");
+pub fn generate_file(details: &ServiceDetails) -> Result<String> {
+    let mut plist_dict = plist::Dictionary::new();
 
-    unit_content.push_str("ExecStart=");
-    unit_content.push_str(&service.program);
-    for arg in &service.arguments {
-        unit_content.push(' ');
-        unit_content.push_str(arg);
+    plist_dict.insert("Label".to_string(), Value::String(details.name.clone()));
+
+    if details.arguments.is_empty() {
+        plist_dict.insert("Program".to_string(), Value::String(details.program.clone()));
+    } else {
+        let mut args = vec![Value::String(details.program.clone())];
+        args.extend(details.arguments.iter().map(|v| Value::String(v.clone())));
+        plist_dict.insert("ProgramArguments".to_string(), Value::Array(args));
     }
-    unit_content.push('\n');
-
-    if let Some(ref wd) = service.working_directory {
-        unit_content.push_str(&format!("WorkingDirectory={}\n", wd));
+    if let Some(wd) = &details.working_directory {
+        plist_dict.insert("WorkingDirectory".to_string(), Value::String(wd.clone()));
     }
 
-    if service.keep_alive {
-        unit_content.push_str("Restart=always\n");
-    }
-    if let Some(file) = &service.env_file {
-        unit_content.push_str(&format!("EnvironmentFile={}\n", file));
-    }
-    for (key, value) in &service.env_vars {
-        unit_content.push_str(&format!("Environment=\"{}={}\"\n", key, value));
+    if details.run_at_load {
+        plist_dict.insert("RunAtLoad".to_string(), Value::Boolean(true));
     }
 
-    if service.run_at_load || !service.after.is_empty() {
-        unit_content.push_str("\n[Install]\n");
+    if details.keep_alive {
+        plist_dict.insert("KeepAlive".to_string(), Value::Boolean(true));
     }
-    if service.run_at_load {
-        unit_content.push_str("WantedBy=default.target\n");
-    }
-    if !service.after.is_empty() {
-        unit_content.push_str("After=");
-        for after in &service.after {
-            unit_content.push_str(after);
-            unit_content.push(' ');
-        }
-        unit_content.pop(); // Remove trailing space
-        unit_content.push('\n');
-    }
-    Ok(unit_content)
+
+    let plist_value = Value::Dictionary(plist_dict);
+
+    // Create the plist file in user's LaunchAgents directory
+    
+    // Write the plist file
+    let mut plist_data = Vec::new();
+    plist::to_writer_xml(&mut plist_data, &plist_value).context("Failed to serialize plist")?;
+    String::from_utf8(plist_data).map_err(Into::into)
 }
 

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use crate::{FsServiceDetails, ServiceDetails};
 use super::{Config, ServiceRef};
+pub use crate::plist::generate_file;
 
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
@@ -211,43 +212,16 @@ pub fn restart_service(name: &str) -> Result<()> {
 }
 
 pub fn create_service(details: &ServiceDetails) -> Result<()> {
-    let mut plist_dict = plist::Dictionary::new();
-
-    plist_dict.insert("Label".to_string(), Value::String(details.name.clone()));
-
-    if details.arguments.is_empty() {
-        plist_dict.insert("Program".to_string(), Value::String(details.program.clone()));
-    } else {
-        let mut args = vec![Value::String(details.program.clone())];
-        args.extend(details.arguments.iter().map(|v| Value::String(v.clone())));
-        plist_dict.insert("ProgramArguments".to_string(), Value::Array(args));
-    }
-    if let Some(wd) = &details.working_directory {
-        plist_dict.insert("WorkingDirectory".to_string(), Value::String(wd.clone()));
-    }
-
-    if details.run_at_load {
-        plist_dict.insert("RunAtLoad".to_string(), Value::Boolean(true));
-    }
-
-    if details.keep_alive {
-        plist_dict.insert("KeepAlive".to_string(), Value::Boolean(true));
-    }
-
-    let plist_value = Value::Dictionary(plist_dict);
-
-    // Create the plist file in user's LaunchAgents directory
+    
+    let plist_data = generate_file(details)
+        .with_context(|| format!("Failed to generate plist for service '{}'", details.name))?;
+    
     let home = dirs::home_dir().context("HOME environment variable not set")?;
     let launch_agents_dir = PathBuf::from(home).join("Library/LaunchAgents");
-
     // Ensure the directory exists
     fs::create_dir_all(&launch_agents_dir).context("Failed to create LaunchAgents directory")?;
-
     let plist_path = launch_agents_dir.join(format!("{}.plist", details.name));
 
-    // Write the plist file
-    let mut plist_data = Vec::new();
-    plist::to_writer_xml(&mut plist_data, &plist_value).context("Failed to serialize plist")?;
     fs::write(&plist_path, plist_data)
         .with_context(|| format!("Failed to write plist file: {}", plist_path.display()))?;
 

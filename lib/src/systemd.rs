@@ -1,11 +1,11 @@
 use crate::ServiceDetails;
 use anyhow::Result;
 
-pub fn parse_systemd(content: &str) -> Result<ServiceDetails> {
+pub fn parse_systemd(_content: &str) -> Result<ServiceDetails> {
     unimplemented!()
 }
 
-pub fn create_systemd(service: &ServiceDetails) -> Result<String> {
+pub fn generate_file(service: &ServiceDetails) -> Result<String> {
     let mut unit_content = String::new();
     unit_content.push_str("[Unit]\n");
     unit_content.push_str(&format!("Description={}\n", service.name));

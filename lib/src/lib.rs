@@ -2,9 +2,6 @@ pub mod platform;
 pub mod systemd;
 pub mod plist;
 
-pub use platform::*;
-pub use systemd::*;
-
 #[derive(Debug, Clone)]
 pub struct ServiceDetails {
     pub name: String,

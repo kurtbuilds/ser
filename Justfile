@@ -38,7 +38,7 @@ clean:
 
 # Install the binary locally
 install:
-    cargo install --path ser_cli
+    cargo install --path cli
 
 # Run the list command
 list:
