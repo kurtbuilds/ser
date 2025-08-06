@@ -14,3 +14,4 @@ anyhow = { workspace = true }
 tabled = { workspace = true }
 atty = { workspace = true }
 dialoguer = { workspace = true }
+plist = { workspace = true }

@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = { workspace = true }
-plist = { workspace = true }
-anyhow = { workspace = true }
+serde.workspace = true
+plist.workspace = true
+anyhow.workspace = true
+dirs.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # macOS specific dependencies if needed

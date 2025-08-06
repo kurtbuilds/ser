@@ -20,7 +20,7 @@ pub struct Logs {
 
 impl Logs {
     pub fn run(&self) -> Result<()> {
-        let resolved_name = platform::resolve_service_name(&self.name)?;
+        let resolved_name = platform::get_service(&self.name)?;
         platform::show_service_logs(&resolved_name, self.lines, self.follow)?;
         Ok(())
     }

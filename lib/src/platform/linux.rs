@@ -1,11 +1,12 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::{ServiceDetails, FsServiceDetails};
+use std::process::Command;
+use super::{Config, ServiceRef};
 
-use super::{Config, Service};
-
-fn get_service_directories() -> Config {
+pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
     let mut system_dirs = Vec::new();
 
@@ -32,7 +33,7 @@ fn get_service_directories() -> Config {
     }
 }
 
-fn scan_directory(dir: &Path) -> Result<Vec<Service>> {
+pub(super) fn scan_directory(dir: &Path) -> Result<Vec<ServiceRef>> {
     let mut services = Vec::new();
 
     if !dir.exists() {
@@ -69,7 +70,7 @@ fn scan_directory(dir: &Path) -> Result<Vec<Service>> {
     Ok(services)
 }
 
-fn parse_unit_file(path: &Path) -> Result<Service> {
+fn parse_unit_file(path: &Path) -> Result<ServiceRef> {
     let _contents = fs::read_to_string(path)?;
 
     let name = path
@@ -83,7 +84,7 @@ fn parse_unit_file(path: &Path) -> Result<Service> {
     // or parse the unit file more thoroughly
     let enabled = is_service_enabled(path, &name);
 
-    Ok(Service {
+    Ok(ServiceRef {
         name,
         path: path.to_string_lossy().to_string(),
         enabled,
@@ -115,37 +116,9 @@ fn is_service_enabled(_path: &Path, name: &str) -> bool {
     false
 }
 
-pub fn list_services(all: bool) -> Result<Vec<Service>> {
-    let config = get_service_directories();
-    let mut services = Vec::new();
-
-    // Always include user services
-    for dir in &config.user_dirs {
-        let user_services = scan_directory(dir)?;
-        services.extend(user_services);
-    }
-
-    // Include system services only if --all flag is set
-    if all {
-        for dir in &config.system_dirs {
-            let system_services = scan_directory(dir)?;
-            services.extend(system_services);
-        }
-    }
-    Ok(services)
-}
-
-use super::ServiceDetails;
-use anyhow::{anyhow, Context};
-use std::process::Command;
-
 pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
     // Find the service first
-    let all_services = list_services(true)?;
-    let service = all_services
-        .iter()
-        .find(|s| s.name == name)
-        .ok_or_else(|| anyhow!("Service '{}' not found", name))?;
+    let service = super::get_service(true)?;
 
     // Parse the unit file for detailed information
     let contents = fs::read_to_string(&service.path)
@@ -162,11 +135,12 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
         let line = line.trim();
         if line.starts_with("ExecStart=") {
             let exec_start = line.strip_prefix("ExecStart=").unwrap_or("");
-            let parts: Vec<&str> = exec_start.split_whitespace().collect();
-            if !parts.is_empty() {
-                program = Some(parts[0].to_string());
-                arguments = parts[1..].iter().map(|s| s.to_string()).collect();
+            let parts = exec_start.split_whitespace();
+            if parts.is_empty() {
+                bail!("ExecStart line is empty in service file: {}", service.path);
             }
+            program = parts.next().unwrap().to_string();
+            arguments = parts.map(|s| s.to_string()).collect();
         } else if line.starts_with("WorkingDirectory=") {
             working_directory = line
                 .strip_prefix("WorkingDirectory=")
@@ -180,16 +154,19 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
 
     let running = is_service_running(name)?;
 
-    Ok(ServiceDetails {
-        name: service.name.clone(),
-        path: service.path.clone(),
-        enabled: service.enabled,
+    Ok(FsServiceDetails {
         running,
-        program,
-        arguments,
-        working_directory,
-        run_at_load,
-        keep_alive,
+        service: ServiceDetails {
+            name: service.name.clone(),
+            enabled: service.enabled,
+            running,
+            program,
+            arguments,
+            working_directory,
+            run_at_load,
+            keep_alive,
+        },
+        path: service.path.clone(),
     })
 }
 
@@ -257,38 +234,7 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
     let unit_path = systemd_user_dir.join(format!("{}.service", details.name));
 
     // Create systemd unit file content
-    let mut unit_content = String::new();
-    unit_content.push_str("[Unit]\n");
-    unit_content.push_str(&format!("Description={}\n", details.name));
-    unit_content.push_str("\n[Service]\n");
 
-    if let Some(ref program) = details.program {
-        if details.arguments.is_empty() {
-            unit_content.push_str(&format!("ExecStart={}\n", program));
-        } else {
-            let mut cmd = program.clone();
-            for arg in &details.arguments {
-                cmd.push(' ');
-                cmd.push_str(arg);
-            }
-            unit_content.push_str(&format!("ExecStart={}\n", cmd));
-        }
-    } else if !details.arguments.is_empty() {
-        unit_content.push_str(&format!("ExecStart={}\n", details.arguments.join(" ")));
-    }
-
-    if let Some(ref wd) = details.working_directory {
-        unit_content.push_str(&format!("WorkingDirectory={}\n", wd));
-    }
-
-    if details.keep_alive {
-        unit_content.push_str("Restart=always\n");
-    }
-
-    if details.run_at_load {
-        unit_content.push_str("\n[Install]\n");
-        unit_content.push_str("WantedBy=default.target\n");
-    }
 
     // Write the unit file
     fs::write(&unit_path, unit_content)

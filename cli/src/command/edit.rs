@@ -14,8 +14,7 @@ pub struct Edit {
 
 impl Edit {
     pub fn run(&self) -> Result<()> {
-        let resolved_name = platform::resolve_service_name(&self.name)?;
-        let service_path = platform::get_service_file_path(&resolved_name)?;
+        let service_path = platform::get_service(&self.name)?.path;
 
         let editor = self
             .editor

@@ -3,10 +3,10 @@ use plist::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::{FsServiceDetails, ServiceDetails};
+use super::{Config, ServiceRef};
 
-use super::{Config, Service, ServiceDetails};
-
-fn get_service_directories() -> Config {
+pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
     let mut system_dirs = Vec::new();
 
@@ -30,7 +30,7 @@ fn get_service_directories() -> Config {
     }
 }
 
-fn scan_directory(dir: &Path) -> Result<Vec<Service>> {
+pub(super) fn scan_directory(dir: &Path) -> Result<Vec<ServiceRef>> {
     let mut services = Vec::new();
 
     if !dir.exists() {
@@ -38,25 +38,22 @@ fn scan_directory(dir: &Path) -> Result<Vec<Service>> {
     }
 
     let entries = fs::read_dir(dir)?;
-
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
 
         if path.extension().and_then(|s| s.to_str()) == Some("plist") {
-            if let Ok(service) = parse_plist(&path) {
+            if let Ok(service) = parse_plist_into_service_ref(&path) {
                 services.push(service);
             }
         }
     }
-
     Ok(services)
 }
 
-fn parse_plist(path: &Path) -> Result<Service> {
+fn parse_plist_into_service_ref(path: &Path) -> Result<ServiceRef> {
     let contents = fs::read(path)?;
     let plist: Value = plist::from_bytes(&contents)?;
-
     let name = if let Some(label) = plist
         .as_dictionary()
         .and_then(|d| d.get("Label"))
@@ -78,38 +75,15 @@ fn parse_plist(path: &Path) -> Result<Service> {
         .and_then(|v| v.as_boolean())
         .unwrap_or(false);
 
-    Ok(Service {
+    Ok(ServiceRef {
         name,
         path: path.to_string_lossy().to_string(),
         enabled,
     })
 }
 
-pub fn list_services(all: bool) -> Result<Vec<Service>> {
-    let config = get_service_directories();
-    let mut services = Vec::new();
-
-    // Always include user services
-    for dir in &config.user_dirs {
-        let user_services = scan_directory(dir)?;
-        services.extend(user_services);
-    }
-
-    // Include system services only if --all flag is set
-    if all {
-        for dir in &config.system_dirs {
-            let system_services = scan_directory(dir)?;
-            services.extend(system_services);
-        }
-    }
-
-    // Sort by name for consistent output
-
-    Ok(services)
-}
-
 fn get_service_path(name: &str) -> Result<String> {
-    let all_services = list_services(true)?;
+    let all_services = super::list_services(true)?;
     let service = all_services
         .iter()
         .find(|s| s.name == name)
@@ -121,30 +95,17 @@ pub fn get_service_file_path(name: &str) -> Result<String> {
     get_service_path(name)
 }
 
-pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
-    // Find the service first
-    let all_services = list_services(true)?;
-    let service = all_services
-        .iter()
-        .find(|s| s.name == name)
-        .ok_or_else(|| anyhow!("Service '{}' not found", name))?;
-
-    // Parse the plist for detailed information
-    let contents = fs::read(&service.path)
-        .with_context(|| format!("Failed to read service file: {}", service.path))?;
-    let plist: Value = plist::from_bytes(&contents)
-        .with_context(|| format!("Failed to parse plist: {}", service.path))?;
-
+pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
     let dict = plist
         .as_dictionary()
         .ok_or_else(|| anyhow!("Invalid plist format"))?;
 
-    let program = dict
+    let mut program = dict
         .get("Program")
         .and_then(|v| v.as_string())
         .map(|s| s.to_string());
 
-    let arguments = dict
+    let mut arguments: Vec<String> = dict
         .get("ProgramArguments")
         .and_then(|v| v.as_array())
         .map(|arr| {
@@ -154,6 +115,12 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
                 .collect()
         })
         .unwrap_or_default();
+    
+    if program.is_none() {
+        program = Some(arguments.remove(0));
+    }
+
+    let program = program.context("Missing 'Program' or 'ProgramArguments' in plist")?;
 
     let working_directory = dict
         .get("WorkingDirectory")
@@ -170,18 +137,39 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
         .and_then(|v| v.as_boolean())
         .unwrap_or(false);
 
-    let running = is_service_running(name)?;
-
     Ok(ServiceDetails {
-        name: service.name.clone(),
-        path: service.path.clone(),
-        enabled: service.enabled,
-        running,
+        name: "".to_string(),
         program,
-        arguments,
+        arguments: vec![],
         working_directory,
         run_at_load,
         keep_alive,
+        env_file: None,
+        env_vars: vec![],
+        after: vec![],
+    })
+
+}
+
+pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
+    // Find the service first
+    let sref = super::get_service(name)?;
+
+    // Parse the plist for detailed information
+    let contents = fs::read(&sref.path)
+        .with_context(|| format!("Failed to read service file: {}", sref.path))?;
+    let plist: Value = plist::from_bytes(&contents)
+        .with_context(|| format!("Failed to parse plist: {}", sref.path))?;
+
+    let service = parse_plist_into_service(plist)?;
+
+    let running = is_service_running(name)?;
+
+    Ok(FsServiceDetails {
+        service,
+        path: sref.path,
+        enabled: sref.enabled,
+        running,
     })
 }
 
@@ -227,26 +215,14 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
 
     plist_dict.insert("Label".to_string(), Value::String(details.name.clone()));
 
-    if let Some(ref program) = details.program {
-        if details.arguments.is_empty() {
-            plist_dict.insert("Program".to_string(), Value::String(program.clone()));
-        } else {
-            let mut args = vec![program.clone()];
-            args.extend(details.arguments.clone());
-            let plist_args: Vec<Value> = args.into_iter().map(Value::String).collect();
-            plist_dict.insert("ProgramArguments".to_string(), Value::Array(plist_args));
-        }
-    } else if !details.arguments.is_empty() {
-        let plist_args: Vec<Value> = details
-            .arguments
-            .iter()
-            .cloned()
-            .map(Value::String)
-            .collect();
-        plist_dict.insert("ProgramArguments".to_string(), Value::Array(plist_args));
+    if details.arguments.is_empty() {
+        plist_dict.insert("Program".to_string(), Value::String(details.program.clone()));
+    } else {
+        let mut args = vec![Value::String(details.program.clone())];
+        args.extend(details.arguments.iter().map(|v| Value::String(v.clone())));
+        plist_dict.insert("ProgramArguments".to_string(), Value::Array(args));
     }
-
-    if let Some(ref wd) = details.working_directory {
+    if let Some(wd) = &details.working_directory {
         plist_dict.insert("WorkingDirectory".to_string(), Value::String(wd.clone()));
     }
 
@@ -261,7 +237,7 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
     let plist_value = Value::Dictionary(plist_dict);
 
     // Create the plist file in user's LaunchAgents directory
-    let home = std::env::var("HOME").context("HOME environment variable not set")?;
+    let home = dirs::home_dir().context("HOME environment variable not set")?;
     let launch_agents_dir = PathBuf::from(home).join("Library/LaunchAgents");
 
     // Ensure the directory exists
@@ -340,7 +316,7 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
             0
         };
 
-        for line in &log_lines[start_idx..] {
+        for &line in &log_lines[start_idx..] {
             println!("{line}");
         }
 
