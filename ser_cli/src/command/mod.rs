@@ -1,4 +1,5 @@
 pub mod add;
+pub mod edit;
 pub mod list;
 pub mod logs;
 pub mod new;
@@ -8,6 +9,7 @@ pub mod start;
 pub mod stop;
 
 pub use add::Add;
+pub use edit::Edit;
 pub use list::List;
 pub use logs::Logs;
 pub use new::New;

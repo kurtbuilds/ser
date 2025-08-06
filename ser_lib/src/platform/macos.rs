@@ -117,6 +117,10 @@ fn get_service_path(name: &str) -> Result<String> {
     Ok(service.path.clone())
 }
 
+pub fn get_service_file_path(name: &str) -> Result<String> {
+    get_service_path(name)
+}
+
 pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
     // Find the service first
     let all_services = list_services(true)?;

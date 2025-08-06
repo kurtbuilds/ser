@@ -29,6 +29,8 @@ enum Commands {
     New(command::New),
     #[command(about = "Add a new service with streamlined prompts")]
     Add(command::Add),
+    #[command(about = "Edit a service file")]
+    Edit(command::Edit),
     #[command(about = "Show logs for a service")]
     Logs(command::Logs),
 }
@@ -44,6 +46,7 @@ fn main() -> Result<()> {
         Commands::Restart(restart_cmd) => restart_cmd.run()?,
         Commands::New(new_cmd) => new_cmd.run()?,
         Commands::Add(add_cmd) => add_cmd.run()?,
+        Commands::Edit(edit_cmd) => edit_cmd.run()?,
         Commands::Logs(logs_cmd) => logs_cmd.run()?,
     }
 

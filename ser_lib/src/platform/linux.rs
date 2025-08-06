@@ -193,6 +193,15 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
     })
 }
 
+pub fn get_service_file_path(name: &str) -> Result<String> {
+    let all_services = list_services(true)?;
+    let service = all_services
+        .iter()
+        .find(|s| s.name == name)
+        .ok_or_else(|| anyhow!("Service '{}' not found", name))?;
+    Ok(service.path.clone())
+}
+
 pub fn start_service(name: &str) -> Result<()> {
     let output = Command::new("systemctl")
         .args(["--user", "start"])
