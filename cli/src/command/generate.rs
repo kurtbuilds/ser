@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Args, ValueEnum};
 use dialoguer::{theme::ColorfulTheme};
@@ -31,6 +32,7 @@ impl Generate {
             }
         };
         println!("{content}");
+        eprintln!("{} is the suggested file path.", PathBuf::from("/etc/systemd/system").join(format!("{}.service", details.name)).display());
         Ok(())
     }
 }

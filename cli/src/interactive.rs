@@ -24,10 +24,15 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
     let program = command.remove(0);
     let arguments = command;
 
+    let bin_path = resolve_binary_path(&program)
+        .with_context(|| format!("Failed to resolve binary path for '{}'", program))?;
+
+    
+    let default_basename = bin_path.rsplit('/').next().unwrap().to_string();
     // Service name
     let name: String = Input::with_theme(theme)
         .with_prompt("Service name (e.g., com.example.myservice)")
-        .default(program.clone())
+        .default(default_basename)
         .validate_with(|input: &String| -> anyhow::Result<(), &str> {
             if input.trim().is_empty() {
                 Err("Service name cannot be empty")
@@ -39,12 +44,10 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
         })
         .interact_text()?;
 
-    let program = resolve_binary_path(&program)
-        .with_context(|| format!("Failed to resolve binary path for '{}'", program))?;
-
     let working_directory = {
         let input: String = Input::with_theme(theme)
             .with_prompt("Working directory path")
+            .allow_empty(true)
             .interact_text()?;
         if input.trim().is_empty() {
             None
@@ -58,6 +61,7 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
         loop {
             let kv: String = Input::with_theme(theme)
                 .with_prompt("Environment variable key (or leave empty to finish)")
+                .allow_empty(true)
                 .interact_text()?;
             if kv.trim().is_empty() {
                 break;
@@ -98,7 +102,7 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
 
     Ok(ServiceDetails {
         name,
-        program,
+        program: bin_path,
         arguments,
         working_directory,
         run_at_load,

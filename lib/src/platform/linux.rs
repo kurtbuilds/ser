@@ -226,13 +226,12 @@ pub fn restart_service(name: &str) -> Result<()> {
 }
 
 pub fn create_service(details: &ServiceDetails) -> Result<()> {
-    let home = std::env::var("HOME").context("HOME environment variable not set")?;
-    let systemd_user_dir = PathBuf::from(home).join(".config/systemd/user");
+    let systemd_system_dir = PathBuf::from("/etc/systemd/system");
 
     // Ensure the directory exists
-    fs::create_dir_all(&systemd_user_dir).context("Failed to create systemd user directory")?;
+    fs::create_dir_all(&systemd_system_dir).context("Failed to create systemd user directory")?;
 
-    let unit_path = systemd_user_dir.join(format!("{}.service", details.name));
+    let unit_path = systemd_system_dir.join(format!("{}.service", details.name));
 
     // Create systemd unit file content
 
