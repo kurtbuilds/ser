@@ -1,0 +1,13 @@
+[workspace]
+members = ["ser_cli", "ser_lib"]
+resolver = "2"
+
+[workspace.dependencies]
+ser_lib = { path = "ser_lib" }
+clap = { version = "4.4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+plist = "1.6"
+anyhow = "1.0"
+tabled = "0.15"
+atty = "0.2"
+dialoguer = "0.11"

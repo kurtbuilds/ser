@@ -1,0 +1,15 @@
+[package]
+name = "ser_lib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+plist = { workspace = true }
+anyhow = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS specific dependencies if needed
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux specific dependencies if needed
