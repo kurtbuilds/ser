@@ -124,34 +124,6 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
     let contents = fs::read_to_string(&service.path)
         .with_context(|| format!("Failed to read service file: {}", service.path))?;
 
-    // Basic parsing of systemd unit file
-    let mut program = None;
-    let mut arguments = Vec::new();
-    let mut working_directory = None;
-    let mut run_at_load = false;
-    let mut keep_alive = false;
-
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.starts_with("ExecStart=") {
-            let exec_start = line.strip_prefix("ExecStart=").unwrap_or("");
-            let mut parts = exec_start.split_whitespace();
-            if let Some(prog) = parts.next() {
-                program = Some(prog.to_string());
-                arguments = parts.map(|s| s.to_string()).collect();
-            } else {
-                bail!("ExecStart line is empty in service file: {}", service.path);
-            }
-        } else if line.starts_with("WorkingDirectory=") {
-            working_directory = line
-                .strip_prefix("WorkingDirectory=")
-                .map(|s| s.to_string());
-        } else if line == "WantedBy=multi-user.target" || line == "WantedBy=default.target" {
-            run_at_load = true;
-        } else if line.starts_with("Restart=") {
-            keep_alive = line != "Restart=no";
-        }
-    }
 
     let running = is_service_running(name)?;
 
@@ -159,7 +131,7 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
         running,
         service: ServiceDetails {
             name: service.name.clone(),
-            program: program.unwrap_or_default(),
+            program: program.expect("No program"),
             arguments,
             working_directory,
             run_at_load,
