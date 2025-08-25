@@ -117,7 +117,7 @@ fn is_service_enabled(_path: &Path, name: &str) -> bool {
     false
 }
 
-pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
+pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
     // Find the service first
     let service_ref = super::get_service(name)?;
 
