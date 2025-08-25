@@ -135,12 +135,13 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
         let line = line.trim();
         if line.starts_with("ExecStart=") {
             let exec_start = line.strip_prefix("ExecStart=").unwrap_or("");
-            let parts = exec_start.split_whitespace();
-            if parts.is_empty() {
+            let mut parts = exec_start.split_whitespace();
+            if let Some(prog) = parts.next() {
+                program = Some(prog.to_string());
+                arguments = parts.map(|s| s.to_string()).collect();
+            } else {
                 bail!("ExecStart line is empty in service file: {}", service.path);
             }
-            program = parts.next().unwrap().to_string();
-            arguments = parts.map(|s| s.to_string()).collect();
         } else if line.starts_with("WorkingDirectory=") {
             working_directory = line
                 .strip_prefix("WorkingDirectory=")
@@ -158,11 +159,14 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
         running,
         service: ServiceDetails {
             name: service.name.clone(),
-            program,
+            program: program.unwrap_or_default(),
             arguments,
             working_directory,
             run_at_load,
             keep_alive,
+            env_file: None,
+            env_vars: Vec::new(),
+            after: Vec::new(),
         },
         enabled: service.enabled,
         path: service.path.clone(),
