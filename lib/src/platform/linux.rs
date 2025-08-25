@@ -3,8 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use crate::{ServiceDetails, FsServiceDetails};
-use std::process::Command;
-use super::{Config, ServiceRef};
+use super::{Config, ServiceRef, list_services};
 pub use crate::systemd::generate_file;
 
 pub(super) fn get_service_directories() -> Config {
@@ -119,7 +118,7 @@ fn is_service_enabled(_path: &Path, name: &str) -> bool {
 
 pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
     // Find the service first
-    let service = super::get_service(true)?;
+    let service = super::get_service(name)?;
 
     // Parse the unit file for detailed information
     let contents = fs::read_to_string(&service.path)
