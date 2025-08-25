@@ -5,6 +5,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::systemd::parse_systemd;
 
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
@@ -118,30 +119,20 @@ fn is_service_enabled(_path: &Path, name: &str) -> bool {
 
 pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
     // Find the service first
-    let service = super::get_service(name)?;
+    let service_ref = super::get_service(name)?;
 
     // Parse the unit file for detailed information
-    let contents = fs::read_to_string(&service.path)
-        .with_context(|| format!("Failed to read service file: {}", service.path))?;
+    let contents = fs::read_to_string(&service_ref.path)
+        .with_context(|| format!("Failed to read service file: {}", service_ref.path))?;
 
-
+    let service = parse_systemd(&contents)?;
     let running = is_service_running(name)?;
 
     Ok(FsServiceDetails {
         running,
-        service: ServiceDetails {
-            name: service.name.clone(),
-            program: program.expect("No program"),
-            arguments,
-            working_directory,
-            run_at_load,
-            keep_alive,
-            env_file: None,
-            env_vars: Vec::new(),
-            after: Vec::new(),
-        },
-        enabled: service.enabled,
-        path: service.path.clone(),
+        service,
+        enabled: service_ref.enabled,
+        path: service_ref.path,
     })
 }
 
