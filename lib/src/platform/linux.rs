@@ -158,14 +158,13 @@ pub fn get_service_details(name: &str) -> Result<ServiceDetails> {
         running,
         service: ServiceDetails {
             name: service.name.clone(),
-            enabled: service.enabled,
-            running,
             program,
             arguments,
             working_directory,
             run_at_load,
             keep_alive,
         },
+        enabled: service.enabled,
         path: service.path.clone(),
     })
 }
