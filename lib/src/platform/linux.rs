@@ -1,10 +1,10 @@
+use super::{list_services, Config, ServiceRef};
+pub use crate::systemd::generate_file;
+use crate::{FsServiceDetails, ServiceDetails};
 use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::{ServiceDetails, FsServiceDetails};
-use super::{Config, ServiceRef, list_services};
-pub use crate::systemd::generate_file;
 
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
@@ -229,14 +229,14 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
     // Ensure the directory exists
     fs::create_dir_all(&systemd_system_dir).context("Failed to create systemd user directory")?;
 
-    let unit_path = systemd_system_dir.join(format!("{}.service", details.name));
+    let path = systemd_system_dir.join(format!("{}.service", details.name));
 
     // Create systemd unit file content
-
+    let content = generate_file(details)?;
 
     // Write the unit file
-    fs::write(&unit_path, unit_content)
-        .with_context(|| format!("Failed to write unit file: {}", unit_path.display()))?;
+    fs::write(&path, content)
+        .with_context(|| format!("Failed to write unit file: {}", path.display()))?;
 
     // Reload systemd daemon
     let _ = Command::new("systemctl")
