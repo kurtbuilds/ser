@@ -48,7 +48,7 @@ pub fn list_services(all: bool) -> Result<Vec<ServiceRef>> {
 pub fn normalize_service_name(name: &str) -> &str {
     // Normalize service names by removing leading/trailing whitespace and converting to lowercase
     let name = name.split('@').next().unwrap();
-    name.trim_start_matches("homebrew.mxcl.")
+    name.trim_start_matches("homebrew.mxcl.").trim_end_matches(".service")
 }
 
 pub fn get_service(name: &str) -> Result<ServiceRef> {

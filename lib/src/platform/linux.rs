@@ -1,11 +1,11 @@
 use super::{list_services, Config, ServiceRef};
 pub use crate::systemd::generate_file;
+use crate::systemd::parse_systemd;
 use crate::{FsServiceDetails, ServiceDetails};
 use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::systemd::parse_systemd;
 
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();

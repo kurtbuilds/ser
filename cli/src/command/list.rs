@@ -9,7 +9,7 @@ use ser_lib::platform;
 
 #[derive(Debug, Args)]
 pub struct List {
-    #[arg(long, help = "Show all services (system and user)")]
+    #[arg(short, long, help = "Show all services (system and user)")]
     pub all: bool,
 }
 

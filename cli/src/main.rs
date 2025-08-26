@@ -17,6 +17,7 @@ struct Cli {
 enum Commands {
     #[command(about = "List background services")]
     #[command(alias = "status")]
+    #[command(alias = "ls")]
     List(command::List),
     #[command(about = "Show detailed information about a service")]
     Show(command::Show),
