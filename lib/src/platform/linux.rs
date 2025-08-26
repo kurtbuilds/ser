@@ -225,7 +225,7 @@ pub fn is_service_running(name: &str) -> Result<bool> {
 
 pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
     let mut cmd = Command::new("journalctl");
-    cmd.args(["--user", "-u", name]);
+    cmd.args(["-u", name]);
 
     // Limit number of lines
     cmd.arg("-n").arg(lines.to_string());
