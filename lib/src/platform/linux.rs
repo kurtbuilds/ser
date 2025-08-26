@@ -256,5 +256,6 @@ pub fn refresh_daemon() -> anyhow::Result<()> {
     Command::new("systemctl")
         .arg("daemon-reload")
         .status()
-        .context("Failed to execute systemctl daemon-reload")
+        .context("Failed to execute systemctl daemon-reload")?;
+    Ok(())
 }
