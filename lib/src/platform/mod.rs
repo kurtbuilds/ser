@@ -66,3 +66,4 @@ pub fn resolve_service_name(name: &str) -> Result<String> {
     let service = get_service(name)?;
     Ok(service.name)
 }
+

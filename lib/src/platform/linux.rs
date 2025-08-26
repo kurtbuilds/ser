@@ -177,7 +177,7 @@ pub fn stop_service(name: &str) -> Result<()> {
 
 pub fn restart_service(name: &str) -> Result<()> {
     let output = Command::new("systemctl")
-        .args(["--user", "restart"])
+        .args(["restart"])
         .arg(name)
         .output()
         .context("Failed to execute systemctl")?;
@@ -250,4 +250,11 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn refresh_daemon() -> anyhow::Result<()> {
+    Command::new("systemctl")
+        .arg("daemon-reload")
+        .status()
+        .context("Failed to execute systemctl daemon-reload")
 }

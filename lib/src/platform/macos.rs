@@ -304,3 +304,7 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
 
     Ok(())
 }
+
+pub fn refresh_daemon() -> Result<()> {
+    Ok(())
+}
