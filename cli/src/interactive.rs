@@ -26,7 +26,6 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
 
     let bin_path = resolve_binary_path(&program)
         .with_context(|| format!("Failed to resolve binary path for '{}'", program))?;
-
     
     let default_basename = bin_path.rsplit('/').next().unwrap().to_string();
     // Service name
@@ -56,6 +55,18 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
         }
     };
 
+    let env_file = {
+        let input: String = Input::with_theme(theme)
+            .with_prompt("Environment file path")
+            .allow_empty(true)
+            .interact_text()?;
+        if input.trim().is_empty() {
+            None
+        } else {
+            Some(input.trim().to_string())
+        }
+    };
+    
     let env_vars = {
         let mut vars = Vec::new();
         loop {
@@ -107,7 +118,7 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
         working_directory,
         run_at_load,
         keep_alive,
-        env_file: None,
+        env_file,
         env_vars,
         after,
     })
