@@ -147,7 +147,7 @@ pub fn get_service_file_path(name: &str) -> Result<String> {
 
 pub fn start_service(name: &str) -> Result<()> {
     let output = Command::new("systemctl")
-        .args(["--user", "start"])
+        .args(["start"])
         .arg(name)
         .output()
         .context("Failed to execute systemctl")?;
@@ -162,7 +162,7 @@ pub fn start_service(name: &str) -> Result<()> {
 
 pub fn stop_service(name: &str) -> Result<()> {
     let output = Command::new("systemctl")
-        .args(["--user", "stop"])
+        .args(["stop"])
         .arg(name)
         .output()
         .context("Failed to execute systemctl")?;
@@ -206,16 +206,14 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
         .with_context(|| format!("Failed to write unit file: {}", path.display()))?;
 
     // Reload systemd daemon
-    let _ = Command::new("systemctl")
-        .args(["--user", "daemon-reload"])
-        .output();
+    refresh_daemon();
 
     Ok(())
 }
 
 pub fn is_service_running(name: &str) -> Result<bool> {
     let output = Command::new("systemctl")
-        .args(["--user", "is-active", "--quiet"])
+        .args(["is-active", "--quiet"])
         .arg(name)
         .output()
         .context("Failed to execute systemctl")?;
