@@ -146,6 +146,9 @@ pub fn get_service_file_path(name: &str) -> Result<String> {
 }
 
 pub fn start_service(name: &str) -> Result<()> {
+    // Reload systemd daemon to pick up any configuration changes
+    refresh_daemon()?;
+
     let output = Command::new("systemctl")
         .args(["start"])
         .arg(name)
@@ -176,6 +179,7 @@ pub fn stop_service(name: &str) -> Result<()> {
 }
 
 pub fn restart_service(name: &str) -> Result<()> {
+    refresh_daemon()?;
     let output = Command::new("systemctl")
         .args(["restart"])
         .arg(name)
@@ -250,7 +254,7 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn refresh_daemon() -> anyhow::Result<()> {
+fn refresh_daemon() -> anyhow::Result<()> {
     Command::new("systemctl")
         .arg("daemon-reload")
         .status()

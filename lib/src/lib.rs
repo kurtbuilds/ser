@@ -1,6 +1,6 @@
 pub mod platform;
-pub mod systemd;
 pub mod plist;
+pub mod systemd;
 
 #[derive(Debug, Clone)]
 pub struct ServiceDetails {

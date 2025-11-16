@@ -8,10 +8,10 @@ name = "ser"
 path = "src/main.rs"
 
 [dependencies]
-ser_lib = { workspace = true }
-clap = { workspace = true }
-anyhow = { workspace = true }
-tabled = { workspace = true }
-atty = { workspace = true }
-dialoguer = { workspace = true }
-plist = { workspace = true }
+ser_lib.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+tabled.workspace = true
+atty.workspace = true
+dialoguer.workspace = true
+plist.workspace = true

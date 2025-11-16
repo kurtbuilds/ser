@@ -51,5 +51,6 @@ pub fn generate_file(details: &ServiceDetails) -> Result<String> {
     // Write the plist file
     let mut plist_data = Vec::new();
     plist::to_writer_xml(&mut plist_data, &plist_value).context("Failed to serialize plist")?;
-    String::from_utf8(plist_data).map_err(Into::into)
+    let plist_string = String::from_utf8(plist_data)?;
+    Ok(plist_string)
 }

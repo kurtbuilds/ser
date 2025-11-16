@@ -13,7 +13,8 @@ impl New {
     pub fn run(&self) -> Result<()> {
         println!("Creating a new service...\n");
         let theme = ColorfulTheme::default();
-        let details = crate::interactive::collect_service_details(&theme, self.command.clone())?;
+        let details =
+            crate::interactive::collect_service_details(&theme, self.command.clone(), true)?;
 
         // Create the service
         platform::create_service(&details)?;

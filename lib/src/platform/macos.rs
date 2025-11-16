@@ -1,11 +1,11 @@
+use super::{Config, ServiceRef};
+pub use crate::plist::generate_file;
+use crate::{FsServiceDetails, ServiceDetails};
 use anyhow::{anyhow, Context, Result};
 use plist::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::{FsServiceDetails, ServiceDetails};
-use super::{Config, ServiceRef};
-pub use crate::plist::generate_file;
 
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
@@ -116,7 +116,7 @@ pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
                 .collect()
         })
         .unwrap_or_default();
-    
+
     if program.is_none() {
         program = Some(arguments.remove(0));
     }
@@ -149,7 +149,6 @@ pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
         env_vars: vec![],
         after: vec![],
     })
-
 }
 
 pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
@@ -212,10 +211,9 @@ pub fn restart_service(name: &str) -> Result<()> {
 }
 
 pub fn create_service(details: &ServiceDetails) -> Result<()> {
-    
     let plist_data = generate_file(details)
         .with_context(|| format!("Failed to generate plist for service '{}'", details.name))?;
-    
+
     let home = dirs::home_dir().context("HOME environment variable not set")?;
     let launch_agents_dir = PathBuf::from(home).join("Library/LaunchAgents");
     // Ensure the directory exists
@@ -302,9 +300,5 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-pub fn refresh_daemon() -> Result<()> {
     Ok(())
 }

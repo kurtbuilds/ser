@@ -1,10 +1,14 @@
-use std::process::Command;
 use anyhow::Context;
-use dialoguer::{Confirm, Input};
 use dialoguer::theme::ColorfulTheme;
+use dialoguer::{Confirm, Input};
 use ser_lib::ServiceDetails;
+use std::process::Command;
 
-pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) -> anyhow::Result<ServiceDetails> {
+pub fn collect_service_details(
+    theme: &ColorfulTheme,
+    mut command: Vec<String>,
+    validate: bool,
+) -> anyhow::Result<ServiceDetails> {
     println!("Creating service configuration...\n");
 
     if command.is_empty() {
@@ -24,9 +28,13 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
     let program = command.remove(0);
     let arguments = command;
 
-    let bin_path = resolve_binary_path(&program)
-        .with_context(|| format!("Failed to resolve binary path for '{}'", program))?;
-    
+    let bin_path = if validate {
+        resolve_binary_path(&program)
+            .with_context(|| format!("Failed to resolve binary path for '{}'", program))?
+    } else {
+        program
+    };
+
     let default_basename = bin_path.rsplit('/').next().unwrap().to_string();
     // Service name
     let name: String = Input::with_theme(theme)
@@ -66,7 +74,7 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
             Some(input.trim().to_string())
         }
     };
-    
+
     let env_vars = {
         let mut vars = Vec::new();
         loop {
@@ -105,7 +113,10 @@ pub fn collect_service_details(theme: &ColorfulTheme, mut command: Vec<String>) 
             .default(true)
             .interact()?;
         if networked {
-            vec!["network.target".to_string(), "network-online.target".to_string()]
+            vec![
+                "network.target".to_string(),
+                "network-online.target".to_string(),
+            ]
         } else {
             Vec::new()
         }
@@ -131,7 +142,7 @@ fn resolve_binary_path(binary: &str) -> anyhow::Result<String> {
             Ok(binary.to_string())
         } else {
             Err(anyhow::anyhow!("Binary '{}' does not exist", binary))
-        }
+        };
     }
 
     // Try using 'which' command first
@@ -175,7 +186,6 @@ fn resolve_binary_path(binary: &str) -> anyhow::Result<String> {
     Err(anyhow::anyhow!("Binary '{}' not found in PATH", binary))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +215,4 @@ mod tests {
             .to_string()
             .contains("not found in PATH"));
     }
-
 }

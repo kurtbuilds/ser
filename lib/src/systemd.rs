@@ -1,6 +1,9 @@
 use crate::ServiceDetails;
 use anyhow::{bail, Result};
 
+/// Comment added to generated service files to indicate they are managed by ser
+pub const MANAGED_BY_COMMENT: &str = "# Managed by ser";
+
 pub fn parse_systemd(contents: &str) -> Result<ServiceDetails> {
     // Basic parsing of systemd unit file
     let mut name = None;
@@ -46,9 +49,11 @@ pub fn parse_systemd(contents: &str) -> Result<ServiceDetails> {
             env_vars.push((a.to_string(), b.to_string()));
         } else if line.starts_with("After=") {
             let after_line = line.strip_prefix("After=").unwrap_or("");
-            after = after_line.split_whitespace().map(|s| s.to_string()).collect();
+            after = after_line
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect();
         }
-        
     }
     Ok(ServiceDetails {
         name: name.expect("No name for service"),
@@ -65,6 +70,8 @@ pub fn parse_systemd(contents: &str) -> Result<ServiceDetails> {
 
 pub fn generate_file(service: &ServiceDetails) -> Result<String> {
     let mut unit_content = String::new();
+    unit_content.push_str(MANAGED_BY_COMMENT);
+    unit_content.push('\n');
     unit_content.push_str("[Unit]\n");
     unit_content.push_str(&format!("Description={}\n", service.name));
     if !service.after.is_empty() {
@@ -109,4 +116,3 @@ pub fn generate_file(service: &ServiceDetails) -> Result<String> {
 
     Ok(unit_content)
 }
-
