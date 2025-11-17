@@ -1,4 +1,5 @@
 use super::{Config, ServiceRef};
+use crate::platform::ListLevel;
 pub use crate::plist::generate_file;
 use crate::{FsServiceDetails, ServiceDetails};
 use anyhow::{anyhow, Context, Result};
@@ -26,6 +27,7 @@ pub(super) fn get_service_directories() -> Config {
     system_dirs.push(PathBuf::from("/Library/LaunchDaemons"));
 
     Config {
+        default_dirs: user_dirs.clone(),
         user_dirs,
         system_dirs,
     }
@@ -84,7 +86,7 @@ fn parse_plist_into_service_ref(path: &Path) -> Result<ServiceRef> {
 }
 
 fn get_service_path(name: &str) -> Result<String> {
-    let all_services = super::list_services(true)?;
+    let all_services = super::list_services(ListLevel::System)?;
     let service = all_services
         .iter()
         .find(|s| s.name == name)

@@ -5,7 +5,10 @@ use tabled::{
     Table, Tabled,
 };
 
-use ser_lib::platform;
+use ser_lib::{
+    platform::{self, ListLevel},
+    systemd::MANAGED_BY_COMMENT,
+};
 
 #[derive(Debug, Args)]
 pub struct List {
@@ -27,13 +30,28 @@ struct ServiceRow {
 
 impl List {
     pub fn run(&self) -> Result<()> {
-        let mut services = platform::list_services(self.all)?;
+        let level = if self.all {
+            ListLevel::System
+        } else {
+            ListLevel::Default
+        };
+        let mut services = platform::list_services(level)?;
         services.sort_by(|a, b| a.name.cmp(&b.name));
         if services.is_empty() {
             eprintln!("No services found.");
             return Ok(());
         }
 
+        if matches!(level, ListLevel::Default) {
+            services.retain(|s| {
+                if s.path.contains("systemd") {
+                    let content = std::fs::read_to_string(&s.path).unwrap();
+                    content.starts_with(MANAGED_BY_COMMENT)
+                } else {
+                    true
+                }
+            });
+        }
         let rows: Vec<ServiceRow> = services
             .into_iter()
             .map(|service| {
@@ -46,7 +64,6 @@ impl List {
                 } else {
                     service.name.clone()
                 };
-
                 // Determine status based on running state
                 let is_running = platform::is_service_running(&service.name).unwrap_or(false);
                 let status = if is_running { "running" } else { "stopped" }.to_string();

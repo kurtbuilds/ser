@@ -10,6 +10,7 @@ use std::process::Command;
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
     let mut system_dirs = Vec::new();
+    let mut default_dirs = Vec::new();
 
     // User-specific systemd directory
     if let Some(home) = std::env::var_os("HOME") {
@@ -28,7 +29,10 @@ pub(super) fn get_service_directories() -> Config {
     system_dirs.push(PathBuf::from("/etc/systemd/system"));
     system_dirs.push(PathBuf::from("/usr/local/lib/systemd/system"));
 
+    default_dirs.push(PathBuf::from("/etc/systemd/system"));
+
     Config {
+        default_dirs,
         user_dirs,
         system_dirs,
     }
@@ -72,7 +76,7 @@ pub(super) fn scan_directory(dir: &Path) -> Result<Vec<ServiceRef>> {
 }
 
 fn parse_unit_file(path: &Path) -> Result<ServiceRef> {
-    let _contents = fs::read_to_string(path)?;
+    // let _contents = fs::read_to_string(path)?;
 
     let name = path
         .file_name()
