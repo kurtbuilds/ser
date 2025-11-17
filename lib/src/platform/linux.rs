@@ -141,7 +141,7 @@ pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
 }
 
 pub fn get_service_file_path(name: &str) -> Result<String> {
-    let all_services = list_services(true)?;
+    let all_services = list_services(super::ListLevel::System)?;
     let service = all_services
         .iter()
         .find(|s| s.name == name)
