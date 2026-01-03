@@ -58,6 +58,10 @@ update:
 bump level:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Error: Working directory is not clean. Commit or stash changes first."
+        exit 1
+    fi
     current=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
     IFS='.' read -r major minor patch <<< "$current"
     case "{{level}}" in
@@ -70,9 +74,17 @@ bump level:
     sed -i '' "s/^version = \"$current\"/version = \"$new\"/" Cargo.toml
     # Also update the workspace dependency version for kurtbuilds-serlib
     sed -i '' "s/kurtbuilds-serlib = { version = \"$current\"/kurtbuilds-serlib = { version = \"$new\"/" Cargo.toml
+    git add Cargo.toml
+    git commit -m "v$new"
     echo "Bumped version: $current -> $new"
 
-# Publish to crates.io (lib first, then cli)
+# Publish to crates.io and create git tag
 publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
     cargo publish -p kurtbuilds-serlib --allow-dirty
     cargo publish -p kurtbuilds-ser --allow-dirty
+    git tag "v$version"
+    git push origin "v$version"
+    echo "Published and tagged v$version"

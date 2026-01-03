@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    branches: [master]
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -73,10 +74,8 @@ jobs:
       - name: Get version
         id: version
         run: |
-          VERSION=$(grep '^version' cli/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          COMMIT=$(git rev-parse --short HEAD)
-          echo "version=v$VERSION" >> $GITHUB_OUTPUT
-          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
