@@ -1,7 +1,7 @@
 use anyhow::Context;
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Confirm, Input};
-use ser_lib::ServiceDetails;
+use dialoguer::{Confirm, Input, Select};
+use serlib::{CalendarSchedule, ServiceDetails};
 use std::process::Command;
 
 pub fn collect_service_details(
@@ -122,6 +122,20 @@ pub fn collect_service_details(
         }
     };
 
+    // Schedule configuration
+    let schedule = {
+        let wants_schedule = Confirm::with_theme(theme)
+            .with_prompt("Schedule this service to run at specific times?")
+            .default(false)
+            .interact()?;
+
+        if wants_schedule {
+            collect_schedule(theme)?
+        } else {
+            None
+        }
+    };
+
     Ok(ServiceDetails {
         name,
         program: bin_path,
@@ -132,7 +146,195 @@ pub fn collect_service_details(
         env_file,
         env_vars,
         after,
+        schedule,
     })
+}
+
+fn collect_schedule(theme: &ColorfulTheme) -> anyhow::Result<Option<CalendarSchedule>> {
+    println!("\nSchedule configuration:");
+
+    let choices = vec![
+        "Daily at specific time",
+        "Weekly on specific day",
+        "Monthly on specific day",
+        "Custom schedule",
+    ];
+
+    let selection = Select::with_theme(theme)
+        .with_prompt("Schedule type")
+        .items(&choices)
+        .default(0)
+        .interact()?;
+
+    match selection {
+        0 => {
+            // Daily
+            let hour = collect_hour(theme)?;
+            let minute = collect_minute(theme)?;
+            Ok(Some(CalendarSchedule {
+                month: None,
+                day: None,
+                weekday: None,
+                hour: Some(hour),
+                minute: Some(minute),
+            }))
+        }
+        1 => {
+            // Weekly
+            let weekday = collect_weekday(theme)?;
+            let hour = collect_hour(theme)?;
+            let minute = collect_minute(theme)?;
+            Ok(Some(CalendarSchedule {
+                month: None,
+                day: None,
+                weekday: Some(weekday),
+                hour: Some(hour),
+                minute: Some(minute),
+            }))
+        }
+        2 => {
+            // Monthly
+            let day = collect_day_of_month(theme)?;
+            let hour = collect_hour(theme)?;
+            let minute = collect_minute(theme)?;
+            Ok(Some(CalendarSchedule {
+                month: None,
+                day: Some(day),
+                weekday: None,
+                hour: Some(hour),
+                minute: Some(minute),
+            }))
+        }
+        3 => {
+            // Custom
+            println!("Leave fields empty for 'any' (like * in cron)\n");
+            let month = collect_optional_number(theme, "Month (1-12)", 1, 12)?;
+            let day = collect_optional_number(theme, "Day of month (1-31)", 1, 31)?;
+            let weekday = collect_optional_weekday(theme)?;
+            let hour = collect_optional_number(theme, "Hour (0-23)", 0, 23)?;
+            let minute = collect_optional_number(theme, "Minute (0-59)", 0, 59)?;
+            Ok(Some(CalendarSchedule {
+                month,
+                day,
+                weekday,
+                hour,
+                minute,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn collect_hour(theme: &ColorfulTheme) -> anyhow::Result<u8> {
+    let hour: u8 = Input::with_theme(theme)
+        .with_prompt("Hour (0-23)")
+        .default(0)
+        .validate_with(|input: &u8| {
+            if *input > 23 {
+                Err("Hour must be 0-23")
+            } else {
+                Ok(())
+            }
+        })
+        .interact_text()?;
+    Ok(hour)
+}
+
+fn collect_minute(theme: &ColorfulTheme) -> anyhow::Result<u8> {
+    let minute: u8 = Input::with_theme(theme)
+        .with_prompt("Minute (0-59)")
+        .default(0)
+        .validate_with(|input: &u8| {
+            if *input > 59 {
+                Err("Minute must be 0-59")
+            } else {
+                Ok(())
+            }
+        })
+        .interact_text()?;
+    Ok(minute)
+}
+
+fn collect_weekday(theme: &ColorfulTheme) -> anyhow::Result<u8> {
+    let days = vec![
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
+    let selection = Select::with_theme(theme)
+        .with_prompt("Day of week")
+        .items(&days)
+        .default(1) // Monday
+        .interact()?;
+    Ok(selection as u8)
+}
+
+fn collect_day_of_month(theme: &ColorfulTheme) -> anyhow::Result<u8> {
+    let day: u8 = Input::with_theme(theme)
+        .with_prompt("Day of month (1-31)")
+        .default(1u8)
+        .validate_with(|input: &u8| {
+            if *input < 1 || *input > 31 {
+                Err("Day must be 1-31")
+            } else {
+                Ok(())
+            }
+        })
+        .interact_text()?;
+    Ok(day)
+}
+
+fn collect_optional_number(
+    theme: &ColorfulTheme,
+    prompt: &str,
+    min: u8,
+    max: u8,
+) -> anyhow::Result<Option<u8>> {
+    let input: String = Input::with_theme(theme)
+        .with_prompt(format!("{} (or empty for any)", prompt))
+        .allow_empty(true)
+        .interact_text()?;
+
+    if input.trim().is_empty() {
+        Ok(None)
+    } else {
+        let value: u8 = input
+            .trim()
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid number"))?;
+        if value < min || value > max {
+            anyhow::bail!("Value must be between {} and {}", min, max);
+        }
+        Ok(Some(value))
+    }
+}
+
+fn collect_optional_weekday(theme: &ColorfulTheme) -> anyhow::Result<Option<u8>> {
+    let days = vec![
+        "Any day",
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
+    let selection = Select::with_theme(theme)
+        .with_prompt("Day of week")
+        .items(&days)
+        .default(0)
+        .interact()?;
+
+    if selection == 0 {
+        Ok(None)
+    } else {
+        Ok(Some((selection - 1) as u8))
+    }
 }
 
 fn resolve_binary_path(binary: &str) -> anyhow::Result<String> {

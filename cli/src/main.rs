@@ -4,11 +4,17 @@ use clap::{Parser, Subcommand};
 mod command;
 mod interactive;
 
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")");
+
 #[derive(Parser)]
 #[command(name = "ser")]
 #[command(about = "A CLI tool for managing background services")]
-#[command(version = "0.1.0")]
+#[command(version = VERSION)]
 struct Cli {
+    /// Print all executed commands to stderr
+    #[arg(short = 'v', long = "verbose", global = true)]
+    verbose: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -40,6 +46,7 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    serlib::set_verbose(cli.verbose);
     match cli.command {
         Commands::List(list_cmd) => list_cmd.run()?,
         Commands::Show(show_cmd) => show_cmd.run()?,

@@ -1,7 +1,7 @@
 use super::{list_services, Config, ServiceRef};
 pub use crate::systemd::generate_file;
 use crate::systemd::parse_systemd;
-use crate::{FsServiceDetails, ServiceDetails};
+use crate::{print_command, FsServiceDetails, ServiceDetails};
 use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -153,30 +153,52 @@ pub fn start_service(name: &str) -> Result<()> {
     // Reload systemd daemon to pick up any configuration changes
     refresh_daemon()?;
 
-    let output = Command::new("systemctl")
-        .args(["start"])
-        .arg(name)
-        .output()
-        .context("Failed to execute systemctl")?;
+    // Check if this is a timer-based service
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let timer_name = format!("{}.timer", base_name);
+    let timer_path = PathBuf::from("/etc/systemd/system").join(&timer_name);
+
+    let unit_to_start = if timer_path.exists() {
+        // Start and enable the timer, not the service
+        &timer_name
+    } else {
+        name
+    };
+
+    let mut cmd = Command::new("systemctl");
+    cmd.args(["enable", "--now"]).arg(unit_to_start);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute systemctl")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!("Failed to start service '{}': {}", name, stderr));
+        return Err(anyhow!("Failed to start '{}': {}", unit_to_start, stderr));
     }
 
     Ok(())
 }
 
 pub fn stop_service(name: &str) -> Result<()> {
-    let output = Command::new("systemctl")
-        .args(["stop"])
-        .arg(name)
-        .output()
-        .context("Failed to execute systemctl")?;
+    // Check if this is a timer-based service
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let timer_name = format!("{}.timer", base_name);
+    let timer_path = PathBuf::from("/etc/systemd/system").join(&timer_name);
+
+    let unit_to_stop = if timer_path.exists() {
+        // Stop and disable the timer
+        &timer_name
+    } else {
+        name
+    };
+
+    let mut cmd = Command::new("systemctl");
+    cmd.args(["disable", "--now"]).arg(unit_to_stop);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute systemctl")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!("Failed to stop service '{}': {}", name, stderr));
+        return Err(anyhow!("Failed to stop '{}': {}", unit_to_stop, stderr));
     }
 
     Ok(())
@@ -184,11 +206,10 @@ pub fn stop_service(name: &str) -> Result<()> {
 
 pub fn restart_service(name: &str) -> Result<()> {
     refresh_daemon()?;
-    let output = Command::new("systemctl")
-        .args(["restart"])
-        .arg(name)
-        .output()
-        .context("Failed to execute systemctl")?;
+    let mut cmd = Command::new("systemctl");
+    cmd.args(["restart"]).arg(name);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute systemctl")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -204,27 +225,31 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
     // Ensure the directory exists
     fs::create_dir_all(&systemd_system_dir).context("Failed to create systemd user directory")?;
 
-    let path = systemd_system_dir.join(format!("{}.service", details.name));
+    // Always create the service file
+    let service_path = systemd_system_dir.join(format!("{}.service", details.name));
+    let service_content = generate_file(details)?;
+    fs::write(&service_path, service_content)
+        .with_context(|| format!("Failed to write unit file: {}", service_path.display()))?;
 
-    // Create systemd unit file content
-    let content = generate_file(details)?;
-
-    // Write the unit file
-    fs::write(&path, content)
-        .with_context(|| format!("Failed to write unit file: {}", path.display()))?;
+    // If scheduled, also create timer file
+    if details.schedule.is_some() {
+        let timer_path = systemd_system_dir.join(format!("{}.timer", details.name));
+        let timer_content = crate::systemd::generate_timer_file(details)?;
+        fs::write(&timer_path, timer_content)
+            .with_context(|| format!("Failed to write timer file: {}", timer_path.display()))?;
+    }
 
     // Reload systemd daemon
-    refresh_daemon();
+    refresh_daemon()?;
 
     Ok(())
 }
 
 pub fn is_service_running(name: &str) -> Result<bool> {
-    let output = Command::new("systemctl")
-        .args(["is-active", "--quiet"])
-        .arg(name)
-        .output()
-        .context("Failed to execute systemctl")?;
+    let mut cmd = Command::new("systemctl");
+    cmd.args(["is-active", "--quiet"]).arg(name);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute systemctl")?;
 
     Ok(output.status.success())
 }
@@ -243,6 +268,7 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
     // Show output with colors and pager disabled for better integration
     cmd.arg("--no-pager");
 
+    print_command(&cmd);
     let mut child = cmd
         .spawn()
         .context("Failed to execute journalctl command")?;
@@ -259,9 +285,57 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
 }
 
 fn refresh_daemon() -> anyhow::Result<()> {
-    Command::new("systemctl")
-        .arg("daemon-reload")
-        .status()
+    let mut cmd = Command::new("systemctl");
+    cmd.arg("daemon-reload");
+    print_command(&cmd);
+    cmd.status()
         .context("Failed to execute systemctl daemon-reload")?;
     Ok(())
+}
+
+/// Check if a service has an associated timer file.
+pub fn has_timer(name: &str) -> bool {
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let timer_path = PathBuf::from("/etc/systemd/system").join(format!("{}.timer", base_name));
+    timer_path.exists()
+}
+
+/// Get the next trigger time for a timer.
+pub fn get_timer_next_trigger(name: &str) -> Result<Option<String>> {
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let timer_name = format!("{}.timer", base_name);
+
+    let mut cmd = Command::new("systemctl");
+    cmd.args([
+        "show",
+        &timer_name,
+        "--property=NextElapseUSecRealtime",
+        "--value",
+    ]);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute systemctl")?;
+
+    if output.status.success() {
+        let next = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !next.is_empty() && next != "n/a" {
+            return Ok(Some(next));
+        }
+    }
+    Ok(None)
+}
+
+/// Check if a timer is enabled.
+pub fn is_timer_enabled(name: &str) -> bool {
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let timer_name = format!("{}.timer", base_name);
+
+    let mut cmd = Command::new("systemctl");
+    cmd.args(["is-enabled", &timer_name]);
+    print_command(&cmd);
+
+    if let Ok(output) = cmd.output() {
+        let status = String::from_utf8_lossy(&output.stdout);
+        return status.trim() == "enabled";
+    }
+    false
 }

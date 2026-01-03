@@ -1,7 +1,7 @@
 use super::{Config, ServiceRef};
 use crate::platform::ListLevel;
 pub use crate::plist::generate_file;
-use crate::{FsServiceDetails, ServiceDetails};
+use crate::{print_command, CalendarSchedule, FsServiceDetails, ServiceDetails};
 use anyhow::{anyhow, Context, Result};
 use plist::Value;
 use std::fs;
@@ -140,6 +140,11 @@ pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
         .and_then(|v| v.as_boolean())
         .unwrap_or(false);
 
+    // Parse StartCalendarInterval for schedule
+    let schedule = dict
+        .get("StartCalendarInterval")
+        .and_then(parse_calendar_interval);
+
     Ok(ServiceDetails {
         name: "".to_string(),
         program,
@@ -150,7 +155,43 @@ pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
         env_file: None,
         env_vars: vec![],
         after: vec![],
+        schedule,
     })
+}
+
+fn parse_calendar_interval(value: &Value) -> Option<CalendarSchedule> {
+    let dict = value.as_dictionary()?;
+
+    Some(CalendarSchedule {
+        month: dict
+            .get("Month")
+            .and_then(|v| v.as_signed_integer())
+            .map(|v| v as u8),
+        day: dict
+            .get("Day")
+            .and_then(|v| v.as_signed_integer())
+            .map(|v| v as u8),
+        weekday: dict
+            .get("Weekday")
+            .and_then(|v| v.as_signed_integer())
+            .map(|v| v as u8),
+        hour: dict
+            .get("Hour")
+            .and_then(|v| v.as_signed_integer())
+            .map(|v| v as u8),
+        minute: dict
+            .get("Minute")
+            .and_then(|v| v.as_signed_integer())
+            .map(|v| v as u8),
+    })
+}
+
+/// Check if a service has a schedule (is a timer).
+pub fn has_timer(name: &str) -> bool {
+    if let Ok(details) = get_service_details(name) {
+        return details.service.schedule.is_some();
+    }
+    false
 }
 
 pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
@@ -176,11 +217,10 @@ pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
 }
 
 pub fn start_service(name: &str) -> Result<()> {
-    let output = Command::new("launchctl")
-        .args(["load", "-w"])
-        .arg(get_service_path(name)?)
-        .output()
-        .context("Failed to execute launchctl")?;
+    let mut cmd = Command::new("launchctl");
+    cmd.args(["load", "-w"]).arg(get_service_path(name)?);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute launchctl")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -191,11 +231,10 @@ pub fn start_service(name: &str) -> Result<()> {
 }
 
 pub fn stop_service(name: &str) -> Result<()> {
-    let output = Command::new("launchctl")
-        .args(["unload", "-w"])
-        .arg(get_service_path(name)?)
-        .output()
-        .context("Failed to execute launchctl")?;
+    let mut cmd = Command::new("launchctl");
+    cmd.args(["unload", "-w"]).arg(get_service_path(name)?);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute launchctl")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -217,7 +256,7 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
         .with_context(|| format!("Failed to generate plist for service '{}'", details.name))?;
 
     let home = dirs::home_dir().context("HOME environment variable not set")?;
-    let launch_agents_dir = PathBuf::from(home).join("Library/LaunchAgents");
+    let launch_agents_dir = home.join("Library/LaunchAgents");
     // Ensure the directory exists
     fs::create_dir_all(&launch_agents_dir).context("Failed to create LaunchAgents directory")?;
     let plist_path = launch_agents_dir.join(format!("{}.plist", details.name));
@@ -229,10 +268,10 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
 }
 
 pub fn is_service_running(name: &str) -> Result<bool> {
-    let output = Command::new("launchctl")
-        .args(["list"])
-        .output()
-        .context("Failed to execute launchctl list")?;
+    let mut cmd = Command::new("launchctl");
+    cmd.args(["list"]);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute launchctl list")?;
 
     if !output.status.success() {
         return Ok(false);
@@ -261,6 +300,7 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
     if follow {
         cmd.arg("--stream");
         // For follow mode, spawn and let it run
+        print_command(&cmd);
         let mut child = cmd.spawn().context("Failed to execute log show command")?;
         let status = child.wait().context("Failed to wait for log command")?;
         if !status.success() {
@@ -268,6 +308,7 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
         }
     } else {
         // For static logs, capture output and show last N lines
+        print_command(&cmd);
         let output = cmd.output().context("Failed to execute log show command")?;
 
         if !output.status.success() {

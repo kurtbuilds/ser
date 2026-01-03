@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use clap::Args;
 
-use ser_lib::platform;
+use serlib::platform;
 
 #[derive(Debug, Args)]
 pub struct Start {

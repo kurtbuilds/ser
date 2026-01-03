@@ -12,13 +12,8 @@ A cross-platform CLI tool for managing background services on macOS and Linux sy
 
 ## Installation
 
-### From Source
-
 ```bash
-git clone <repository-url>
-cd ser
-cargo build --release
-cargo install --path ser_cli
+cargo binstall kurtbuilds-ser
 ```
 
 ## Usage

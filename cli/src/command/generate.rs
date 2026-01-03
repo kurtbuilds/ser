@@ -25,16 +25,30 @@ impl Generate {
             crate::interactive::collect_service_details(&theme, self.command.clone(), false)?;
 
         let content = match self.format {
-            Format::Native => ser_lib::platform::generate_file(&details)?,
-            Format::Systemd => ser_lib::systemd::generate_file(&details)?,
+            Format::Native => serlib::platform::generate_file(&details)?,
+            Format::Systemd => serlib::systemd::generate_file(&details)?,
         };
         println!("{content}");
+
+        let base_path = PathBuf::from("/etc/systemd/system");
         eprintln!(
             "{} is the suggested file path.",
-            PathBuf::from("/etc/systemd/system")
+            base_path
                 .join(format!("{}.service", details.name))
                 .display()
         );
+
+        // Also generate timer file if scheduled (for systemd format)
+        if details.schedule.is_some() && matches!(self.format, Format::Systemd) {
+            println!("\n# --- Timer File ---\n");
+            let timer_content = serlib::systemd::generate_timer_file(&details)?;
+            println!("{timer_content}");
+            eprintln!(
+                "{} is the suggested timer file path.",
+                base_path.join(format!("{}.timer", details.name)).display()
+            );
+        }
+
         Ok(())
     }
 }

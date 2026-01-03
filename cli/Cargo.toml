@@ -1,14 +1,22 @@
 [package]
-name = "ser_cli"
-version = "0.1.0"
-edition = "2021"
+name = "kurtbuilds-ser"
+version.workspace = true
+edition.workspace = true
+description = "A CLI tool for managing background services on macOS and Linux"
+repository.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "ser"
 path = "src/main.rs"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/{ version }/ser-{ target }.tar.gz"
+bin-dir = "ser"
+pkg-fmt = "tgz"
+
 [dependencies]
-ser_lib.workspace = true
+kurtbuilds-serlib.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 tabled.workspace = true

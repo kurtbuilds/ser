@@ -4,6 +4,30 @@ use anyhow::{bail, Result};
 /// Comment added to generated service files to indicate they are managed by ser
 pub const MANAGED_BY_COMMENT: &str = "# Managed by ser";
 
+/// Generate a systemd timer file for scheduled execution.
+pub fn generate_timer_file(service: &ServiceDetails) -> Result<String> {
+    let schedule = service
+        .schedule
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("No schedule defined"))?;
+
+    let mut content = String::new();
+    content.push_str(MANAGED_BY_COMMENT);
+    content.push('\n');
+    content.push_str("[Unit]\n");
+    content.push_str(&format!("Description=Timer for {}\n", service.name));
+    content.push_str("\n[Timer]\n");
+    content.push_str(&format!(
+        "OnCalendar={}\n",
+        schedule.to_systemd_oncalendar()
+    ));
+    content.push_str("Persistent=true\n");
+    content.push_str("\n[Install]\n");
+    content.push_str("WantedBy=timers.target\n");
+
+    Ok(content)
+}
+
 pub fn parse_systemd(contents: &str) -> Result<ServiceDetails> {
     // Basic parsing of systemd unit file
     let mut name = None;
@@ -65,6 +89,7 @@ pub fn parse_systemd(contents: &str) -> Result<ServiceDetails> {
         env_file,
         env_vars,
         after,
+        schedule: None, // Schedule is parsed from .timer file separately
     })
 }
 
@@ -85,6 +110,11 @@ pub fn generate_file(service: &ServiceDetails) -> Result<String> {
     }
     unit_content.push_str("\n[Service]\n");
 
+    // For scheduled services, use Type=oneshot
+    if service.schedule.is_some() {
+        unit_content.push_str("Type=oneshot\n");
+    }
+
     unit_content.push_str("ExecStart=");
     unit_content.push_str(&service.program);
     for arg in &service.arguments {
@@ -97,7 +127,8 @@ pub fn generate_file(service: &ServiceDetails) -> Result<String> {
         unit_content.push_str(&format!("WorkingDirectory={}\n", wd));
     }
 
-    if service.keep_alive {
+    // Only add Restart for non-scheduled services
+    if service.schedule.is_none() && service.keep_alive {
         unit_content.push_str("Restart=always\n");
     }
     if let Some(file) = &service.env_file {
@@ -107,10 +138,9 @@ pub fn generate_file(service: &ServiceDetails) -> Result<String> {
         unit_content.push_str(&format!("Environment=\"{}={}\"\n", key, value));
     }
 
-    if service.run_at_load {
+    // Only add [Install] section for non-scheduled services
+    if service.schedule.is_none() && service.run_at_load {
         unit_content.push_str("\n[Install]\n");
-    }
-    if service.run_at_load {
         unit_content.push_str("WantedBy=default.target\n");
     }
 

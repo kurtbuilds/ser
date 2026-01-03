@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Args;
 use std::process::Command;
 
-use ser_lib::platform;
+use serlib::platform;
 
 #[derive(Debug, Args)]
 pub struct Edit {

@@ -25,12 +25,25 @@ pub fn generate_file(details: &ServiceDetails) -> Result<String> {
         plist_dict.insert("WorkingDirectory".to_string(), Value::String(wd.clone()));
     }
 
-    if details.run_at_load {
-        plist_dict.insert("RunAtLoad".to_string(), Value::Boolean(true));
-    }
+    // Handle schedule - if scheduled, add StartCalendarInterval instead of RunAtLoad/KeepAlive
+    if let Some(schedule) = &details.schedule {
+        let mut interval_dict = plist::Dictionary::new();
+        for (key, value) in schedule.to_launchd_dict() {
+            interval_dict.insert(key, Value::Integer(value.into()));
+        }
+        plist_dict.insert(
+            "StartCalendarInterval".to_string(),
+            Value::Dictionary(interval_dict),
+        );
+    } else {
+        // Only add RunAtLoad for non-scheduled services
+        if details.run_at_load {
+            plist_dict.insert("RunAtLoad".to_string(), Value::Boolean(true));
+        }
 
-    if details.keep_alive {
-        plist_dict.insert("KeepAlive".to_string(), Value::Boolean(true));
+        if details.keep_alive {
+            plist_dict.insert("KeepAlive".to_string(), Value::Boolean(true));
+        }
     }
 
     if !details.env_vars.is_empty() {
@@ -46,9 +59,6 @@ pub fn generate_file(details: &ServiceDetails) -> Result<String> {
 
     let plist_value = Value::Dictionary(plist_dict);
 
-    // Create the plist file in user's LaunchAgents directory
-
-    // Write the plist file
     let mut plist_data = Vec::new();
     plist::to_writer_xml(&mut plist_data, &plist_value).context("Failed to serialize plist")?;
     let plist_string = String::from_utf8(plist_data)?;

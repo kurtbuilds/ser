@@ -14,7 +14,7 @@ build-release: (build "release")
 
 # Run the project with arguments
 run +args="":
-    cargo run -p ser_cli -- {{args}}
+    cargo run -p kurtbuilds-ser -- {{args}}
 
 # Run tests with optional filter
 test filter="":
@@ -42,7 +42,7 @@ install:
 
 # Run the list command
 list:
-    cargo run -p ser_cli -- list
+    cargo run -p kurtbuilds-ser -- list
 
 # Check formatting without applying changes
 fmt-check: (fmt "true")
@@ -53,3 +53,26 @@ ci: fmt-check clippy test
 # Update dependencies
 update:
     cargo update
+
+# Bump version (major, minor, or patch)
+bump level:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    current=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+    IFS='.' read -r major minor patch <<< "$current"
+    case "{{level}}" in
+        major) major=$((major + 1)); minor=0; patch=0 ;;
+        minor) minor=$((minor + 1)); patch=0 ;;
+        patch) patch=$((patch + 1)) ;;
+        *) echo "Usage: just bump <major|minor|patch>"; exit 1 ;;
+    esac
+    new="$major.$minor.$patch"
+    sed -i '' "s/^version = \"$current\"/version = \"$new\"/" Cargo.toml
+    # Also update the workspace dependency version for kurtbuilds-serlib
+    sed -i '' "s/kurtbuilds-serlib = { version = \"$current\"/kurtbuilds-serlib = { version = \"$new\"/" Cargo.toml
+    echo "Bumped version: $current -> $new"
+
+# Publish to crates.io (lib first, then cli)
+publish:
+    cargo publish -p kurtbuilds-serlib --allow-dirty
+    cargo publish -p kurtbuilds-ser --allow-dirty

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Args;
 
-use ser_lib::platform;
+use serlib::platform;
 
 #[derive(Debug, Args)]
 pub struct Show {
@@ -40,11 +40,19 @@ impl Show {
 
         println!(
             "Run at Load: {}",
-            if details.service.run_at_load { "Yes" } else { "No" }
+            if details.service.run_at_load {
+                "Yes"
+            } else {
+                "No"
+            }
         );
         println!(
             "Keep Alive: {}",
-            if details.service.keep_alive { "Yes" } else { "No" }
+            if details.service.keep_alive {
+                "Yes"
+            } else {
+                "No"
+            }
         );
 
         Ok(())
