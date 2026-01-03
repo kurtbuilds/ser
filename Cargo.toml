@@ -9,7 +9,7 @@ repository = "https://github.com/kurtbuilds/ser"
 license = "MIT"
 
 [workspace.dependencies]
-kurtbuilds-serlib = { version = "0.1.5", path = "lib" }
+kurtbuilds-serlib = { version = "*", path = "lib" }
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 plist = "1.8"

@@ -72,8 +72,7 @@ bump level:
     esac
     new="$major.$minor.$patch"
     sed -i '' "s/^version = \"$current\"/version = \"$new\"/" Cargo.toml
-    # Also update the workspace dependency version for kurtbuilds-serlib
-    sed -i '' "s/kurtbuilds-serlib = { version = \"$current\"/kurtbuilds-serlib = { version = \"$new\"/" Cargo.toml
+    cargo update
     git add .
     git commit -m "v$new"
     echo "Bumped version: $current -> $new"
@@ -83,8 +82,7 @@ publish:
     #!/usr/bin/env bash
     set -euo pipefail
     version=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-    cargo publish -p kurtbuilds-serlib --allow-dirty
-    cargo publish -p kurtbuilds-ser --allow-dirty
+    cargo publish --workspace
     git tag "v$version"
     git push origin "v$version"
     echo "Published and tagged v$version"
