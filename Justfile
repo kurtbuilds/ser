@@ -74,7 +74,7 @@ bump level:
     sed -i '' "s/^version = \"$current\"/version = \"$new\"/" Cargo.toml
     # Also update the workspace dependency version for kurtbuilds-serlib
     sed -i '' "s/kurtbuilds-serlib = { version = \"$current\"/kurtbuilds-serlib = { version = \"$new\"/" Cargo.toml
-    git add Cargo.toml
+    git add .
     git commit -m "v$new"
     echo "Bumped version: $current -> $new"
 
