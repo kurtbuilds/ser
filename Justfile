@@ -31,4 +31,4 @@ publish:
     VERSION=$(cargo bump get)
     git tag "v$VERSION"
     git push origin "v$VERSION"
-    echo "Published and tagged v$VERSION. Github actions will build release."
+    # "Published and tagged v$VERSION. Github actions will build release."
