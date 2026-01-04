@@ -5,6 +5,7 @@ edition.workspace = true
 description = "A CLI tool for managing background services on macOS and Linux"
 repository.workspace = true
 license.workspace = true
+readme = "../README.md"
 
 [[bin]]
 name = "ser"
