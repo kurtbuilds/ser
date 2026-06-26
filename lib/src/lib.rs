@@ -225,6 +225,72 @@ impl CalendarSchedule {
     }
 }
 
+/// How a service is scheduled. Either a calendar pattern ("Mondays at 09:30")
+/// or a fixed interval ("every 15 minutes").
+#[derive(Debug, Clone)]
+pub enum Schedule {
+    Calendar(CalendarSchedule),
+    /// Repeat every N seconds (launchd `StartInterval` / systemd
+    /// `OnUnitActiveSec`).
+    Interval(u64),
+}
+
+impl Schedule {
+    /// Human-readable description of the schedule.
+    pub fn display(&self) -> String {
+        match self {
+            Schedule::Calendar(c) => c.display(),
+            Schedule::Interval(secs) => format!("every {}", humanize_secs(*secs)),
+        }
+    }
+
+    /// The next wall-clock fire time strictly after `after`.
+    ///
+    /// Interval schedules fire relative to the unit's last activation, which we
+    /// don't track, so their next fire isn't knowable here and returns `None`.
+    pub fn next_fire_after(&self, after: chrono::NaiveDateTime) -> Option<chrono::NaiveDateTime> {
+        match self {
+            Schedule::Calendar(c) => c.next_fire_after(after),
+            Schedule::Interval(_) => None,
+        }
+    }
+
+    /// Format an interval as a systemd time span (e.g. `900s`).
+    pub fn interval_to_systemd(secs: u64) -> String {
+        format!("{secs}s")
+    }
+
+    /// Parse a subset of systemd time spans into seconds: a bare number (seconds),
+    /// or a value suffixed with `s`, `sec`, `m`, `min`, or `h`. Returns `None`
+    /// for compound or unrecognized spans.
+    pub fn parse_interval_secs(span: &str) -> Option<u64> {
+        let span = span.trim();
+        let (digits, unit): (String, String) = span.chars().partition(|c| c.is_ascii_digit());
+        if digits.is_empty() {
+            return None;
+        }
+        let value: u64 = digits.parse().ok()?;
+        let multiplier = match unit.trim() {
+            "" | "s" | "sec" | "secs" | "second" | "seconds" => 1,
+            "m" | "min" | "mins" | "minute" | "minutes" => 60,
+            "h" | "hr" | "hour" | "hours" => 3600,
+            _ => return None,
+        };
+        Some(value * multiplier)
+    }
+}
+
+/// Format a number of seconds compactly (e.g. `90s`, `15m`, `2h`).
+fn humanize_secs(secs: u64) -> String {
+    if secs >= 3600 && secs.is_multiple_of(3600) {
+        format!("{}h", secs / 3600)
+    } else if secs >= 60 && secs.is_multiple_of(60) {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
 /// Parse a single `OnCalendar` field: `*` (wildcard) becomes `None`, a numeric
 /// value becomes `Some(n)`. Returns `None` (parse failure) for anything else,
 /// such as ranges/lists/steps we cannot represent (`0/15`, `Mon..Fri`).
@@ -261,7 +327,7 @@ pub struct ServiceDetails {
     pub env_file: Option<String>,
     pub env_vars: Vec<(String, String)>,
     pub after: Vec<String>,
-    pub schedule: Option<CalendarSchedule>,
+    pub schedule: Option<Schedule>,
 }
 
 #[derive(Debug, Clone)]
@@ -398,6 +464,28 @@ mod tests {
             leap.next_fire_after(ndt("2026-06-26 00:00:00")),
             Some(ndt("2028-02-29 00:00:00"))
         );
+    }
+
+    #[test]
+    fn parses_interval_spans() {
+        assert_eq!(Schedule::parse_interval_secs("900"), Some(900));
+        assert_eq!(Schedule::parse_interval_secs("900s"), Some(900));
+        assert_eq!(Schedule::parse_interval_secs("15min"), Some(900));
+        assert_eq!(Schedule::parse_interval_secs("15m"), Some(900));
+        assert_eq!(Schedule::parse_interval_secs("2h"), Some(7200));
+        assert_eq!(Schedule::parse_interval_secs("bogus"), None);
+        assert_eq!(Schedule::parse_interval_secs("15days"), None);
+    }
+
+    #[test]
+    fn interval_display_and_roundtrip() {
+        assert_eq!(Schedule::Interval(900).display(), "every 15m");
+        assert_eq!(Schedule::Interval(7200).display(), "every 2h");
+        assert_eq!(Schedule::Interval(90).display(), "every 90s");
+        // systemd round-trip
+        let span = Schedule::interval_to_systemd(900);
+        assert_eq!(span, "900s");
+        assert_eq!(Schedule::parse_interval_secs(&span), Some(900));
     }
 
     #[test]

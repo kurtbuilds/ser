@@ -28,8 +28,8 @@ least report the exit result so a deploy script can gate on it.
 The skill never calls an interactive create — it `scp`s a committed `.service` +
 `.timer` into `/etc/systemd/system/`, then expects `ser` to drive them:
 
-- `ser timer enable <name>` — `daemon-reload` + `enable --now` the **`.timer`**
-- `ser timer disable <name>` — `disable --now` the `.timer`
+- `ser enable <name>` — `daemon-reload` + `enable --now` the **`.timer`**
+- `ser disable <name>` — `disable --now` the `.timer`
 - `ser timer logs <name> [-f]` — journald for the unit
 - `ser timer list` / `ser timer show <name>` — status, next/last run, schedule
 

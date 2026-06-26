@@ -12,7 +12,7 @@ use tabled::{
 
 use crate::interactive::ServiceKind;
 use serlib::platform::{self, ListLevel};
-use serlib::CalendarSchedule;
+use serlib::Schedule;
 
 #[derive(Debug, Args)]
 pub struct Timer {
@@ -34,10 +34,6 @@ enum TimerCommand {
     Next(Next),
     #[command(about = "Change a timer's schedule")]
     Edit(Edit),
-    #[command(about = "Enable (and start) a timer")]
-    Enable(Enable),
-    #[command(about = "Disable (and stop) a timer")]
-    Disable(Disable),
     #[command(about = "Remove a timer")]
     #[command(alias = "remove")]
     Rm(Rm),
@@ -51,8 +47,6 @@ impl Timer {
             TimerCommand::Show(cmd) => cmd.run(),
             TimerCommand::Next(cmd) => cmd.run(),
             TimerCommand::Edit(cmd) => cmd.run(),
-            TimerCommand::Enable(cmd) => cmd.run(),
-            TimerCommand::Disable(cmd) => cmd.run(),
             TimerCommand::Rm(cmd) => cmd.run(),
         }
     }
@@ -158,7 +152,12 @@ impl Show {
         println!("Timer: {}", display_name);
         println!("Path: {}", details.path);
         println!("Schedule: {}", schedule.display());
-        println!("OnCalendar: {}", schedule.to_systemd_oncalendar());
+        match &schedule {
+            Schedule::Calendar(c) => println!("OnCalendar: {}", c.to_systemd_oncalendar()),
+            Schedule::Interval(secs) => {
+                println!("Interval: {}", Schedule::interval_to_systemd(*secs))
+            }
+        }
         println!("Enabled: {}", if details.enabled { "Yes" } else { "No" });
 
         if !details.service.program.is_empty() {
@@ -170,13 +169,25 @@ impl Show {
             println!("Runs: {}", cmd);
         }
 
-        let upcoming = upcoming_runs(&schedule, 5);
-        if upcoming.is_empty() {
-            println!("Upcoming: none");
-        } else {
-            println!("Upcoming:");
-            for dt in upcoming {
-                println!("  {}", format_dt(dt));
+        match &schedule {
+            // Interval timers fire relative to activation, so wall-clock times
+            // aren't computable here.
+            Schedule::Interval(secs) => {
+                println!(
+                    "Upcoming: runs every {}",
+                    Schedule::interval_to_systemd(*secs)
+                );
+            }
+            Schedule::Calendar(_) => {
+                let upcoming = upcoming_runs(&schedule, 5);
+                if upcoming.is_empty() {
+                    println!("Upcoming: none");
+                } else {
+                    println!("Upcoming:");
+                    for dt in upcoming {
+                        println!("  {}", format_dt(dt));
+                    }
+                }
             }
         }
         Ok(())
@@ -277,43 +288,8 @@ impl Edit {
             platform::restart_service(&resolved)?;
             println!("Timer restarted.");
         } else {
-            println!(
-                "Run `ser timer enable {}` to apply the new schedule.",
-                self.name
-            );
+            println!("Run `ser enable {}` to apply the new schedule.", self.name);
         }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Args)]
-pub struct Enable {
-    #[arg(help = "Name of the timer to enable")]
-    name: String,
-}
-
-impl Enable {
-    pub fn run(&self) -> Result<()> {
-        let resolved = platform::resolve_service_name(&self.name)?;
-        print!("Enabling timer '{}'...", self.name);
-        platform::start_service(&resolved)?;
-        println!(" done.");
-        Ok(())
-    }
-}
-
-#[derive(Debug, Args)]
-pub struct Disable {
-    #[arg(help = "Name of the timer to disable")]
-    name: String,
-}
-
-impl Disable {
-    pub fn run(&self) -> Result<()> {
-        let resolved = platform::resolve_service_name(&self.name)?;
-        print!("Disabling timer '{}'...", self.name);
-        platform::stop_service(&resolved)?;
-        println!(" done.");
         Ok(())
     }
 }
@@ -349,7 +325,7 @@ impl Rm {
 
 struct TimerEntry {
     display_name: String,
-    schedule: CalendarSchedule,
+    schedule: Schedule,
     enabled: bool,
     running: bool,
 }
@@ -393,7 +369,7 @@ fn collect_timers(all: bool) -> Result<Vec<TimerEntry>> {
 }
 
 /// The next `count` fire times of a schedule, starting from now.
-fn upcoming_runs(schedule: &CalendarSchedule, count: usize) -> Vec<NaiveDateTime> {
+fn upcoming_runs(schedule: &Schedule, count: usize) -> Vec<NaiveDateTime> {
     let mut runs = Vec::new();
     let mut cursor = chrono::Local::now().naive_local();
     for _ in 0..count {

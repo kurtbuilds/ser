@@ -1,4 +1,4 @@
-use crate::ServiceDetails;
+use crate::{Schedule, ServiceDetails};
 use anyhow::{bail, Result};
 
 /// Comment added to generated service files to indicate they are managed by ser
@@ -17,11 +17,19 @@ pub fn generate_timer_file(service: &ServiceDetails) -> Result<String> {
     content.push_str("[Unit]\n");
     content.push_str(&format!("Description=Timer for {}\n", service.name));
     content.push_str("\n[Timer]\n");
-    content.push_str(&format!(
-        "OnCalendar={}\n",
-        schedule.to_systemd_oncalendar()
-    ));
-    content.push_str("Persistent=true\n");
+    match schedule {
+        Schedule::Calendar(c) => {
+            content.push_str(&format!("OnCalendar={}\n", c.to_systemd_oncalendar()));
+            // Catch up on runs missed while the machine was off.
+            content.push_str("Persistent=true\n");
+        }
+        Schedule::Interval(secs) => {
+            let span = Schedule::interval_to_systemd(*secs);
+            // First run shortly after boot, then every interval after each run.
+            content.push_str(&format!("OnBootSec={span}\n"));
+            content.push_str(&format!("OnUnitActiveSec={span}\n"));
+        }
+    }
     content.push_str("\n[Install]\n");
     content.push_str("WantedBy=timers.target\n");
 

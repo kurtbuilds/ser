@@ -1,4 +1,6 @@
+pub mod disable;
 pub mod edit;
+pub mod enable;
 pub mod generate;
 pub mod list;
 pub mod logs;
@@ -9,7 +11,9 @@ pub mod start;
 pub mod stop;
 pub mod timer;
 
+pub use disable::Disable;
 pub use edit::Edit;
+pub use enable::Enable;
 pub use generate::Generate;
 pub use list::List;
 pub use logs::Logs;

@@ -1,4 +1,4 @@
-use crate::ServiceDetails;
+use crate::{Schedule, ServiceDetails};
 use anyhow::{Context, Result};
 use plist::Value;
 
@@ -25,16 +25,27 @@ pub fn generate_file(details: &ServiceDetails) -> Result<String> {
         plist_dict.insert("WorkingDirectory".to_string(), Value::String(wd.clone()));
     }
 
-    // Handle schedule - if scheduled, add StartCalendarInterval instead of RunAtLoad/KeepAlive
+    // Handle schedule - if scheduled, add StartCalendarInterval/StartInterval
+    // instead of RunAtLoad/KeepAlive.
     if let Some(schedule) = &details.schedule {
-        let mut interval_dict = plist::Dictionary::new();
-        for (key, value) in schedule.to_launchd_dict() {
-            interval_dict.insert(key, Value::Integer(value.into()));
+        match schedule {
+            Schedule::Calendar(c) => {
+                let mut interval_dict = plist::Dictionary::new();
+                for (key, value) in c.to_launchd_dict() {
+                    interval_dict.insert(key, Value::Integer(value.into()));
+                }
+                plist_dict.insert(
+                    "StartCalendarInterval".to_string(),
+                    Value::Dictionary(interval_dict),
+                );
+            }
+            Schedule::Interval(secs) => {
+                plist_dict.insert(
+                    "StartInterval".to_string(),
+                    Value::Integer((*secs as i64).into()),
+                );
+            }
         }
-        plist_dict.insert(
-            "StartCalendarInterval".to_string(),
-            Value::Dictionary(interval_dict),
-        );
     } else {
         // Only add RunAtLoad for non-scheduled services
         if details.run_at_load {

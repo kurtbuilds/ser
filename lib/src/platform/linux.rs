@@ -144,14 +144,21 @@ pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
 }
 
 /// Read the schedule from the `.timer` unit paired with the given `.service`
-/// file path. Returns `None` when there is no timer or its `OnCalendar`
-/// expression cannot be represented as a [`CalendarSchedule`].
-fn read_timer_schedule(service_path: &str) -> Option<crate::CalendarSchedule> {
+/// file path. Handles both `OnCalendar=` (calendar) and `OnUnitActiveSec=`
+/// (interval) timers. Returns `None` when there is no timer or its expression
+/// cannot be represented as a [`Schedule`].
+fn read_timer_schedule(service_path: &str) -> Option<crate::Schedule> {
+    use crate::{CalendarSchedule, Schedule};
+
     let timer_path = Path::new(service_path).with_extension("timer");
     let contents = fs::read_to_string(&timer_path).ok()?;
     for line in contents.lines() {
-        if let Some(expr) = line.trim().strip_prefix("OnCalendar=") {
-            return crate::CalendarSchedule::from_systemd_oncalendar(expr);
+        let line = line.trim();
+        if let Some(expr) = line.strip_prefix("OnCalendar=") {
+            return CalendarSchedule::from_systemd_oncalendar(expr).map(Schedule::Calendar);
+        }
+        if let Some(span) = line.strip_prefix("OnUnitActiveSec=") {
+            return Schedule::parse_interval_secs(span).map(Schedule::Interval);
         }
     }
     None
@@ -190,6 +197,29 @@ pub fn start_service(name: &str) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(anyhow!("Failed to start '{}': {}", unit_to_start, stderr));
+    }
+
+    Ok(())
+}
+
+/// Run the underlying service unit once, immediately, regardless of whether it
+/// is timer-backed. Unlike `start_service`, this never touches the `.timer`
+/// (which only arms the schedule) — it invokes the `.service` directly so the
+/// job executes right now.
+pub fn run_service_now(name: &str) -> Result<()> {
+    refresh_daemon()?;
+
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let service_name = format!("{}.service", base_name);
+
+    let mut cmd = Command::new("systemctl");
+    cmd.arg("start").arg(&service_name);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute systemctl")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("Failed to run '{}': {}", service_name, stderr));
     }
 
     Ok(())

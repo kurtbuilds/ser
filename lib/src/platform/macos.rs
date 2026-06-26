@@ -1,7 +1,7 @@
 use super::{Config, ServiceRef};
 use crate::platform::ListLevel;
 pub use crate::plist::generate_file;
-use crate::{print_command, CalendarSchedule, FsServiceDetails, ServiceDetails};
+use crate::{print_command, CalendarSchedule, FsServiceDetails, Schedule, ServiceDetails};
 use anyhow::{anyhow, Context, Result};
 use plist::Value;
 use std::fs;
@@ -146,10 +146,17 @@ pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
         .and_then(|v| v.as_boolean())
         .unwrap_or(false);
 
-    // Parse StartCalendarInterval for schedule
-    let schedule = dict
-        .get("StartCalendarInterval")
-        .and_then(parse_calendar_interval);
+    // Parse schedule: a simple repeating StartInterval, or a calendar pattern.
+    let schedule = if let Some(secs) = dict
+        .get("StartInterval")
+        .and_then(|v| v.as_signed_integer())
+    {
+        Some(Schedule::Interval(secs.max(0) as u64))
+    } else {
+        dict.get("StartCalendarInterval")
+            .and_then(parse_calendar_interval)
+            .map(Schedule::Calendar)
+    };
 
     let env_vars = dict
         .get("EnvironmentVariables")
@@ -241,6 +248,29 @@ pub fn start_service(name: &str) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(anyhow!("Failed to start service '{}': {}", name, stderr));
+    }
+
+    Ok(())
+}
+
+/// Run a job once, immediately. For a scheduled (timer) job, `start_service`
+/// only loads the plist so launchd arms the schedule; this kicks the job off
+/// right now via `launchctl start <label>`. The job must be loaded first, so we
+/// load it (idempotently) before starting.
+pub fn run_service_now(name: &str) -> Result<()> {
+    // Ensure the job is loaded; ignore errors since it may already be loaded.
+    let path = get_service_path(name)?;
+    let _ = Command::new("launchctl").args(["load", &path]).output();
+
+    // The launchd label matches the service name for ser-managed units.
+    let mut cmd = Command::new("launchctl");
+    cmd.arg("start").arg(name);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute launchctl")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("Failed to run service '{}': {}", name, stderr));
     }
 
     Ok(())

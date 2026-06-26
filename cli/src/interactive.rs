@@ -1,7 +1,7 @@
 use anyhow::Context;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Input, Select};
-use serlib::{CalendarSchedule, ServiceDetails};
+use serlib::{CalendarSchedule, Schedule, ServiceDetails};
 use std::process::Command;
 
 /// What the user is creating: a long-running service or a scheduled timer.
@@ -174,13 +174,14 @@ fn collect_after(theme: &ColorfulTheme) -> anyhow::Result<Vec<String>> {
     })
 }
 
-pub fn collect_schedule(theme: &ColorfulTheme) -> anyhow::Result<Option<CalendarSchedule>> {
+pub fn collect_schedule(theme: &ColorfulTheme) -> anyhow::Result<Option<Schedule>> {
     println!("\nSchedule configuration:");
 
     let choices = vec![
         "Daily at specific time",
         "Weekly on specific day",
         "Monthly on specific day",
+        "Every N minutes/hours (interval)",
         "Custom schedule",
     ];
 
@@ -190,46 +191,50 @@ pub fn collect_schedule(theme: &ColorfulTheme) -> anyhow::Result<Option<Calendar
         .default(0)
         .interact()?;
 
-    match selection {
+    let schedule = match selection {
         0 => {
             // Daily
             let hour = collect_hour(theme)?;
             let minute = collect_minute(theme)?;
-            Ok(Some(CalendarSchedule {
+            Schedule::Calendar(CalendarSchedule {
                 month: None,
                 day: None,
                 weekday: None,
                 hour: Some(hour),
                 minute: Some(minute),
-            }))
+            })
         }
         1 => {
             // Weekly
             let weekday = collect_weekday(theme)?;
             let hour = collect_hour(theme)?;
             let minute = collect_minute(theme)?;
-            Ok(Some(CalendarSchedule {
+            Schedule::Calendar(CalendarSchedule {
                 month: None,
                 day: None,
                 weekday: Some(weekday),
                 hour: Some(hour),
                 minute: Some(minute),
-            }))
+            })
         }
         2 => {
             // Monthly
             let day = collect_day_of_month(theme)?;
             let hour = collect_hour(theme)?;
             let minute = collect_minute(theme)?;
-            Ok(Some(CalendarSchedule {
+            Schedule::Calendar(CalendarSchedule {
                 month: None,
                 day: Some(day),
                 weekday: None,
                 hour: Some(hour),
                 minute: Some(minute),
-            }))
+            })
         }
         3 => {
+            // Interval
+            Schedule::Interval(collect_interval_secs(theme)?)
+        }
+        4 => {
             // Custom
             println!("Leave fields empty for 'any' (like * in cron)\n");
             let month = collect_optional_number(theme, "Month (1-12)", 1, 12)?;
@@ -237,16 +242,42 @@ pub fn collect_schedule(theme: &ColorfulTheme) -> anyhow::Result<Option<Calendar
             let weekday = collect_optional_weekday(theme)?;
             let hour = collect_optional_number(theme, "Hour (0-23)", 0, 23)?;
             let minute = collect_optional_number(theme, "Minute (0-59)", 0, 59)?;
-            Ok(Some(CalendarSchedule {
+            Schedule::Calendar(CalendarSchedule {
                 month,
                 day,
                 weekday,
                 hour,
                 minute,
-            }))
+            })
         }
-        _ => Ok(None),
-    }
+        _ => return Ok(None),
+    };
+    Ok(Some(schedule))
+}
+
+fn collect_interval_secs(theme: &ColorfulTheme) -> anyhow::Result<u64> {
+    let units = vec!["Minutes", "Hours", "Seconds"];
+    let unit = Select::with_theme(theme)
+        .with_prompt("Interval unit")
+        .items(&units)
+        .default(0)
+        .interact()?;
+    let multiplier: u64 = match unit {
+        0 => 60,
+        1 => 3600,
+        _ => 1,
+    };
+    let amount: u64 = Input::with_theme(theme)
+        .with_prompt("Run every")
+        .validate_with(|input: &u64| {
+            if *input == 0 {
+                Err("Interval must be at least 1")
+            } else {
+                Ok(())
+            }
+        })
+        .interact_text()?;
+    Ok(amount * multiplier)
 }
 
 fn collect_hour(theme: &ColorfulTheme) -> anyhow::Result<u8> {

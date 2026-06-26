@@ -33,8 +33,11 @@ ser timer next [<name>]        # upcoming fire times (one or all), sorted
 ser timer logs <name> [-f]     # run history / output (journalctl / log show)
 ser timer create               # interactive, schedule-first creation flow
 ser timer edit <name>          # change schedule without hand-editing files
-ser timer enable|disable <name># toggle without removing the definition
 ser timer rm <name>            # remove timer (+ paired service on Linux)
+
+# lifecycle verbs are shared with services (top-level):
+ser enable|disable <name>      # arm/disarm a timer's schedule (or a service)
+ser start <name>               # run a timer's job once now
 ```
 
 `ser list` continues to show everything; `ser timer list` is the
@@ -106,8 +109,10 @@ fixed empty names in `show`.
   `collect_schedule`) that leads with cadence, then program.
 - **`ser timer edit <name>`** — loads existing details, re-runs the picker,
   regenerates the unit/plist, and offers to restart so the change applies.
-- **`ser timer enable|disable|rm`** — explicit lifecycle verbs (`rm` confirms,
-  `-y` to skip). New `platform::remove_service` on both platforms.
+- **`ser enable|disable <name>`** — top-level lifecycle verbs shared by services
+  and timers; when the unit has a schedule they arm/disarm the timer. `ser start`
+  on a timer runs the job once now. `ser timer rm` removes the definition (`rm`
+  confirms, `-y` to skip). New `platform::remove_service` on both platforms.
 - **Fixed `Restart` for timers** (`platform/linux.rs`) so it restarts the
   `.timer`, not just the `.service`.
 
@@ -116,23 +121,30 @@ entirely through `ser timer`, with the unit file always matching the model.
 
 ---
 
-## Milestone 3 — Per-platform scheduling expressivity
+## Milestone 3 — Per-platform scheduling expressivity 🟡
 
-Goal: deliver on "best-effort per platform" — let power users express more.
+Status: **interval timers done.** Schedules are now a `Schedule` enum
+(`Calendar` | `Interval(secs)`). Richer `OnCalendar` expressions are deferred.
 
-- **macOS `StartInterval`** — "every N seconds/minutes" simple intervals
-  (`plist.rs`). Model as `Schedule::Interval(Duration)` vs
-  `Schedule::Calendar(..)`.
-- **systemd interval timers** — `OnUnitActiveSec`/`OnBootSec` for "every N
-  minutes" semantics; map the same `Schedule::Interval` here.
-- **Richer `OnCalendar`** — ranges/lists/steps (`Mon..Fri`, `*:0/15`). Extend
-  `CalendarSchedule` fields from `Option<u8>` toward a small expression type, or
-  add a raw-passthrough escape hatch with validation.
-- **Graceful degradation** — when a schedule isn't representable on the other
-  platform, `ser generate` warns clearly rather than emitting something wrong.
+- ✅ **macOS `StartInterval`** — "every N min/hours/sec" intervals (`plist.rs`),
+  parsed and generated; `Schedule::Interval(u64)` vs `Schedule::Calendar(..)`.
+- ✅ **systemd interval timers** — `OnBootSec`/`OnUnitActiveSec` generation and
+  parsing (`systemd.rs`, `linux.rs`), with a small time-span parser
+  (`Schedule::parse_interval_secs`) covering `900s`/`15min`/`2h`/bare seconds.
+- ✅ **Interactive picker** gained an "Every N minutes/hours" option.
+- ⏳ **Richer `OnCalendar`** — ranges/lists/steps (`Mon..Fri`, `*:0/15`).
+  Deferred. The cheap path (recommended): a raw-`OnCalendar` passthrough variant
+  with validation. The expensive path: turn `CalendarSchedule` fields into an
+  expression type and teach `next_fire` interval arithmetic.
+- ⏳ **Graceful degradation** — `ser generate` warning when a schedule isn't
+  representable on the other platform. Not yet wired.
 
-**Exit criteria:** "every 15 minutes" and "weekdays at 9am" both work natively
-on each platform and round-trip.
+Note: interval timers fire relative to activation, so their wall-clock "next
+run" isn't computable; `list`/`show`/`next` display the cadence instead of a
+timestamp for them.
+
+**Exit criteria:** "every 15 minutes" ✅ and "weekdays at 9am" ✅ both work
+natively on each platform and round-trip. (Range/step expressions outstanding.)
 
 ---
 

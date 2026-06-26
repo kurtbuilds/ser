@@ -33,6 +33,10 @@ enum Commands {
     Stop(command::Stop),
     #[command(about = "Restart a service")]
     Restart(command::Restart),
+    #[command(about = "Enable a service or timer (start it, and arm a timer's schedule)")]
+    Enable(command::Enable),
+    #[command(about = "Disable a service or timer (stop it, and disarm a timer's schedule)")]
+    Disable(command::Disable),
     #[command(about = "Create a new service interactively")]
     #[command(alias = "create")]
     New(command::New),
@@ -55,6 +59,8 @@ fn main() -> Result<()> {
         Commands::Start(start_cmd) => start_cmd.run()?,
         Commands::Stop(stop_cmd) => stop_cmd.run()?,
         Commands::Restart(restart_cmd) => restart_cmd.run()?,
+        Commands::Enable(enable_cmd) => enable_cmd.run()?,
+        Commands::Disable(disable_cmd) => disable_cmd.run()?,
         Commands::New(new_cmd) => new_cmd.run()?,
         Commands::Generate(generate_cmd) => generate_cmd.run()?,
         Commands::Edit(edit_cmd) => edit_cmd.run()?,

@@ -13,17 +13,22 @@ impl Start {
     pub fn run(&self) -> Result<()> {
         let resolved_name = platform::resolve_service_name(&self.name)?;
 
-        // Check if service exists and is already running
-        match platform::get_service_details(&resolved_name) {
-            Ok(details) => {
-                if details.running {
-                    println!("Service '{}' is already running.", self.name);
-                    return Ok(());
-                }
-            }
-            Err(_) => {
-                return Err(anyhow!("Service '{}' not found.", self.name));
-            }
+        // Check if service exists, and whether it's a scheduled (timer) unit.
+        let details = platform::get_service_details(&resolved_name)
+            .map_err(|_| anyhow!("Service '{}' not found.", self.name))?;
+
+        // For a timer, `start` runs the job once now rather than arming the
+        // schedule — use `ser enable` to turn the schedule on.
+        if details.service.schedule.is_some() {
+            print!("Running '{}' now...", self.name);
+            platform::run_service_now(&resolved_name)?;
+            println!(" done.");
+            return Ok(());
+        }
+
+        if details.running {
+            println!("Service '{}' is already running.", self.name);
+            return Ok(());
         }
 
         print!("Starting service '{}'...", self.name);
