@@ -27,7 +27,10 @@ enum Commands {
     List(command::List),
     #[command(about = "Show detailed information about a service")]
     Show(command::Show),
-    #[command(about = "Start a service")]
+    #[command(
+        about = "Start a service now (for a timer, runs the job immediately; use `enable` to arm its schedule)"
+    )]
+    #[command(alias = "run")]
     Start(command::Start),
     #[command(about = "Stop a service")]
     Stop(command::Stop),
