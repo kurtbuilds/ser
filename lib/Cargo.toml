@@ -15,3 +15,4 @@ serde.workspace = true
 plist.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
+chrono.workspace = true

@@ -42,6 +42,8 @@ enum Commands {
     Edit(command::Edit),
     #[command(about = "Show logs for a service")]
     Logs(command::Logs),
+    #[command(about = "Manage scheduled timers")]
+    Timer(command::Timer),
 }
 
 fn main() -> Result<()> {
@@ -57,6 +59,7 @@ fn main() -> Result<()> {
         Commands::Generate(generate_cmd) => generate_cmd.run()?,
         Commands::Edit(edit_cmd) => edit_cmd.run()?,
         Commands::Logs(logs_cmd) => logs_cmd.run()?,
+        Commands::Timer(timer_cmd) => timer_cmd.run()?,
     }
     Ok(())
 }

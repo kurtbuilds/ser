@@ -21,8 +21,9 @@ pub struct Generate {
 impl Generate {
     pub fn run(&self) -> Result<()> {
         let theme = ColorfulTheme::default();
+        let kind = crate::interactive::prompt_service_kind(&theme)?;
         let details =
-            crate::interactive::collect_service_details(&theme, self.command.clone(), false)?;
+            crate::interactive::collect_service_details(&theme, self.command.clone(), false, kind)?;
 
         let content = match self.format {
             Format::Native => serlib::platform::generate_file(&details)?,

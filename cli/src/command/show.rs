@@ -38,6 +38,10 @@ impl Show {
             println!("Working Directory: {}", wd);
         }
 
+        if let Some(ref schedule) = details.service.schedule {
+            println!("Schedule: {}", schedule.display());
+        }
+
         println!(
             "Run at Load: {}",
             if details.service.run_at_load {

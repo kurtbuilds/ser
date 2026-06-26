@@ -24,3 +24,4 @@ tabled.workspace = true
 atty.workspace = true
 dialoguer.workspace = true
 plist.workspace = true
+chrono.workspace = true

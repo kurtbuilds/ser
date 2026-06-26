@@ -103,6 +103,12 @@ pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
         .as_dictionary()
         .ok_or_else(|| anyhow!("Invalid plist format"))?;
 
+    let name = dict
+        .get("Label")
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
+        .to_string();
+
     let mut program = dict
         .get("Program")
         .and_then(|v| v.as_string())
@@ -119,7 +125,7 @@ pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
         })
         .unwrap_or_default();
 
-    if program.is_none() {
+    if program.is_none() && !arguments.is_empty() {
         program = Some(arguments.remove(0));
     }
 
@@ -145,15 +151,25 @@ pub fn parse_plist_into_service(plist: Value) -> Result<ServiceDetails> {
         .get("StartCalendarInterval")
         .and_then(parse_calendar_interval);
 
+    let env_vars = dict
+        .get("EnvironmentVariables")
+        .and_then(|v| v.as_dictionary())
+        .map(|d| {
+            d.iter()
+                .filter_map(|(k, v)| v.as_string().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+
     Ok(ServiceDetails {
-        name: "".to_string(),
+        name,
         program,
-        arguments: vec![],
+        arguments,
         working_directory,
         run_at_load,
         keep_alive,
         env_file: None,
-        env_vars: vec![],
+        env_vars,
         after: vec![],
         schedule,
     })
@@ -264,6 +280,19 @@ pub fn create_service(details: &ServiceDetails) -> Result<()> {
     fs::write(&plist_path, plist_data)
         .with_context(|| format!("Failed to write plist file: {}", plist_path.display()))?;
 
+    Ok(())
+}
+
+pub fn remove_service(name: &str) -> Result<()> {
+    let path = get_service_path(name)?;
+
+    // Best-effort unload so the job is stopped before its plist disappears.
+    let mut cmd = Command::new("launchctl");
+    cmd.args(["unload", "-w", &path]);
+    print_command(&cmd);
+    let _ = cmd.output();
+
+    fs::remove_file(&path).with_context(|| format!("Failed to remove plist file: {path}"))?;
     Ok(())
 }
 

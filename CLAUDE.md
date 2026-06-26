@@ -7,8 +7,8 @@ This file contains development notes and commands for Claude Code to help with p
 `ser` is a cross-platform CLI tool for managing background services, supporting both macOS (launchd) and Linux (systemd).
 
 This is a Cargo workspace with two crates:
-- `ser_lib` - Core library containing platform-specific service management
-- `ser_cli` - Command-line interface that uses ser_lib
+- `serlib` (in `lib/`) - Core library containing platform-specific service management
+- `ser` CLI (in `cli/`) - Command-line interface that uses serlib
 
 ## Key Commands
 
@@ -25,21 +25,21 @@ This is a Cargo workspace with two crates:
 - `just clippy` - Run clippy linter
 
 ### Development
-- `just run <args>` - Run with arguments (uses ser_cli package)
+- `just run <args>` - Run with arguments (uses the cli package)
 - `just list` - Quick test of list command
-- `just install` - Install binary locally (installs from ser_cli)
+- `just install` - Install binary locally (installs from cli)
 - `just clean` - Clean build artifacts
 - `just update` - Update dependencies
 
 ## Project Structure
 
-### ser_cli crate
-- `ser_cli/src/main.rs` - Main entry point with CLI definition
-- `ser_cli/src/command/` - Command implementations
+### cli crate (`ser`)
+- `cli/src/main.rs` - Main entry point with CLI definition
+- `cli/src/command/` - Command implementations
 
-### ser_lib crate
-- `ser_lib/src/lib.rs` - Library entry point
-- `ser_lib/src/platform/` - Platform-specific service management
+### lib crate (`serlib`)
+- `lib/src/lib.rs` - Library entry point
+- `lib/src/platform/` - Platform-specific service management
   - `macos.rs` - macOS/launchd implementation
   - `linux.rs` - Linux/systemd implementation
 

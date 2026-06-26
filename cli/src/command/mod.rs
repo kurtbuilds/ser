@@ -7,6 +7,7 @@ pub mod restart;
 pub mod show;
 pub mod start;
 pub mod stop;
+pub mod timer;
 
 pub use edit::Edit;
 pub use generate::Generate;
@@ -17,3 +18,4 @@ pub use restart::Restart;
 pub use show::Show;
 pub use start::Start;
 pub use stop::Stop;
+pub use timer::Timer;

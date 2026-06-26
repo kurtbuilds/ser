@@ -129,7 +129,10 @@ pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
     let contents = fs::read_to_string(&service_ref.path)
         .with_context(|| format!("Failed to read service file: {}", service_ref.path))?;
 
-    let service = parse_systemd(&contents)?;
+    let mut service = parse_systemd(&contents)?;
+    // The schedule lives in the paired `.timer` unit, not the `.service` file,
+    // so read it back here to populate `service.schedule`.
+    service.schedule = read_timer_schedule(&service_ref.path);
     let running = is_service_running(name)?;
 
     Ok(FsServiceDetails {
@@ -138,6 +141,20 @@ pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
         enabled: service_ref.enabled,
         path: service_ref.path,
     })
+}
+
+/// Read the schedule from the `.timer` unit paired with the given `.service`
+/// file path. Returns `None` when there is no timer or its `OnCalendar`
+/// expression cannot be represented as a [`CalendarSchedule`].
+fn read_timer_schedule(service_path: &str) -> Option<crate::CalendarSchedule> {
+    let timer_path = Path::new(service_path).with_extension("timer");
+    let contents = fs::read_to_string(&timer_path).ok()?;
+    for line in contents.lines() {
+        if let Some(expr) = line.trim().strip_prefix("OnCalendar=") {
+            return crate::CalendarSchedule::from_systemd_oncalendar(expr);
+        }
+    }
+    None
 }
 
 pub fn get_service_file_path(name: &str) -> Result<String> {
@@ -206,16 +223,58 @@ pub fn stop_service(name: &str) -> Result<()> {
 
 pub fn restart_service(name: &str) -> Result<()> {
     refresh_daemon()?;
+
+    // For timer-backed units, restart the timer so a changed schedule is picked
+    // up; restarting the .service would just run it once.
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let timer_name = format!("{}.timer", base_name);
+    let timer_path = PathBuf::from("/etc/systemd/system").join(&timer_name);
+
+    let unit_to_restart = if timer_path.exists() {
+        &timer_name
+    } else {
+        name
+    };
+
     let mut cmd = Command::new("systemctl");
-    cmd.args(["restart"]).arg(name);
+    cmd.args(["restart"]).arg(unit_to_restart);
     print_command(&cmd);
     let output = cmd.output().context("Failed to execute systemctl")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!("Failed to restart service '{}': {}", name, stderr));
+        return Err(anyhow!(
+            "Failed to restart '{}': {}",
+            unit_to_restart,
+            stderr
+        ));
     }
 
+    Ok(())
+}
+
+pub fn remove_service(name: &str) -> Result<()> {
+    // Best-effort stop/disable (also handles the paired timer) before deleting.
+    let _ = stop_service(name);
+
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let dir = PathBuf::from("/etc/systemd/system");
+    let service_path = dir.join(format!("{}.service", base_name));
+    let timer_path = dir.join(format!("{}.timer", base_name));
+
+    let mut removed = false;
+    for path in [&service_path, &timer_path] {
+        if path.exists() {
+            fs::remove_file(path)
+                .with_context(|| format!("Failed to remove unit file: {}", path.display()))?;
+            removed = true;
+        }
+    }
+    if !removed {
+        bail!("No unit files found for '{}'", name);
+    }
+
+    refresh_daemon()?;
     Ok(())
 }
 

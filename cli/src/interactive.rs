@@ -4,10 +4,36 @@ use dialoguer::{Confirm, Input, Select};
 use serlib::{CalendarSchedule, ServiceDetails};
 use std::process::Command;
 
+/// What the user is creating: a long-running service or a scheduled timer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceKind {
+    Service,
+    Timer,
+}
+
+/// Ask the user whether they want to create a service or a timer.
+pub fn prompt_service_kind(theme: &ColorfulTheme) -> anyhow::Result<ServiceKind> {
+    let choices = vec![
+        "Service (runs continuously, optionally on boot)",
+        "Timer (runs on a schedule)",
+    ];
+    let selection = Select::with_theme(theme)
+        .with_prompt("What do you want to create?")
+        .items(&choices)
+        .default(0)
+        .interact()?;
+    Ok(if selection == 0 {
+        ServiceKind::Service
+    } else {
+        ServiceKind::Timer
+    })
+}
+
 pub fn collect_service_details(
     theme: &ColorfulTheme,
     mut command: Vec<String>,
     validate: bool,
+    kind: ServiceKind,
 ) -> anyhow::Result<ServiceDetails> {
     println!("Creating service configuration...\n");
 
@@ -95,44 +121,27 @@ pub fn collect_service_details(
         }
         vars
     };
-    // Run at load
-    let run_at_load = Confirm::with_theme(theme)
-        .with_prompt("Start automatically when system boots?")
-        .default(true)
-        .interact()?;
+    let after = collect_after(theme)?;
 
-    // Keep alive
-    let keep_alive = Confirm::with_theme(theme)
-        .with_prompt("Restart automatically if it crashes?")
-        .default(true)
-        .interact()?;
-
-    let after = {
-        let networked = Confirm::with_theme(theme)
-            .with_prompt("Networked service?")
-            .default(true)
-            .interact()?;
-        if networked {
-            vec![
-                "network.target".to_string(),
-                "network-online.target".to_string(),
-            ]
-        } else {
-            Vec::new()
+    // Service-only options (run at load / keep alive) vs. timer-only (schedule).
+    // Scheduled units deliberately don't use RunAtLoad/KeepAlive, so we only ask
+    // the questions that apply to the chosen kind.
+    let (run_at_load, keep_alive, schedule) = match kind {
+        ServiceKind::Service => {
+            let run_at_load = Confirm::with_theme(theme)
+                .with_prompt("Start automatically when system boots?")
+                .default(true)
+                .interact()?;
+            let keep_alive = Confirm::with_theme(theme)
+                .with_prompt("Restart automatically if it crashes?")
+                .default(true)
+                .interact()?;
+            (run_at_load, keep_alive, None)
         }
-    };
-
-    // Schedule configuration
-    let schedule = {
-        let wants_schedule = Confirm::with_theme(theme)
-            .with_prompt("Schedule this service to run at specific times?")
-            .default(false)
-            .interact()?;
-
-        if wants_schedule {
-            collect_schedule(theme)?
-        } else {
-            None
+        ServiceKind::Timer => {
+            let schedule = collect_schedule(theme)?
+                .ok_or_else(|| anyhow::anyhow!("A timer requires a schedule"))?;
+            (false, false, Some(schedule))
         }
     };
 
@@ -150,7 +159,22 @@ pub fn collect_service_details(
     })
 }
 
-fn collect_schedule(theme: &ColorfulTheme) -> anyhow::Result<Option<CalendarSchedule>> {
+fn collect_after(theme: &ColorfulTheme) -> anyhow::Result<Vec<String>> {
+    let networked = Confirm::with_theme(theme)
+        .with_prompt("Networked service?")
+        .default(true)
+        .interact()?;
+    Ok(if networked {
+        vec![
+            "network.target".to_string(),
+            "network-online.target".to_string(),
+        ]
+    } else {
+        Vec::new()
+    })
+}
+
+pub fn collect_schedule(theme: &ColorfulTheme) -> anyhow::Result<Option<CalendarSchedule>> {
     println!("\nSchedule configuration:");
 
     let choices = vec![

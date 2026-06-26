@@ -18,3 +18,4 @@ tabled = "0.20.0"
 atty = "0.2"
 dialoguer = "0.12"
 dirs = "6"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
