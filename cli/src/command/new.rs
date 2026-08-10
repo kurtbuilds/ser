@@ -44,9 +44,9 @@ pub fn finish_create(theme: &ColorfulTheme, details: ServiceDetails) -> Result<(
         println!("Service '{}' created successfully.", details.name);
     }
 
-    // Ask if user wants to start/enable it now
+    // Ask if user wants to start it now
     let prompt = if is_scheduled {
-        "Enable the timer now?"
+        "Start the timer now?"
     } else {
         "Start the service now?"
     };
@@ -58,12 +58,14 @@ pub fn finish_create(theme: &ColorfulTheme, details: ServiceDetails) -> Result<(
 
     if start_now {
         if is_scheduled {
-            print!("Enabling timer '{}'...", details.name);
+            print!("Starting timer '{}'...", details.name);
         } else {
             print!("Starting service '{}'...", details.name);
         }
-        platform::start_service(&details.name)?;
-        println!(" done.");
+        crate::command::run_and_verify(
+            || platform::start_service(&details.name),
+            || platform::verify_service_started(&details.name),
+        )?;
     }
 
     Ok(())

@@ -36,8 +36,9 @@ ser timer edit <name>          # change schedule without hand-editing files
 ser timer rm <name>            # remove timer (+ paired service on Linux)
 
 # lifecycle verbs are shared with services (top-level):
-ser enable|disable <name>      # arm/disarm a timer's schedule (or a service)
-ser start <name>               # run a timer's job once now
+ser start|stop <name>          # arm/disarm a timer's schedule (or a service),
+                               # persistently across reboots
+ser run <name>                 # run a timer's job once now
 ```
 
 `ser list` continues to show everything; `ser timer list` is the
@@ -113,6 +114,9 @@ fixed empty names in `show`.
   and timers; when the unit has a schedule they arm/disarm the timer. `ser start`
   on a timer runs the job once now. `ser timer rm` removes the definition (`rm`
   confirms, `-y` to skip). New `platform::remove_service` on both platforms.
+  *(Superseded: `enable`/`disable` were later removed — `start`/`stop` always
+  persisted, so the verbs were duplicates. `start`/`stop` now arm/disarm a
+  timer's schedule, and the new top-level `ser run` fires a job once now.)*
 - **Fixed `Restart` for timers** (`platform/linux.rs`) so it restarts the
   `.timer`, not just the `.service`.
 

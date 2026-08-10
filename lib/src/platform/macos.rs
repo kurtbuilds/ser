@@ -4,9 +4,12 @@ pub use crate::plist::generate_file;
 use crate::{print_command, CalendarSchedule, FsServiceDetails, Schedule, ServiceDetails};
 use anyhow::{anyhow, Context, Result};
 use plist::Value;
+use std::collections::HashMap;
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
@@ -54,6 +57,71 @@ pub(super) fn scan_directory(dir: &Path) -> Result<Vec<ServiceRef>> {
     Ok(services)
 }
 
+/// Every label launchd holds an enable/disable override for, mapped to whether
+/// it is disabled.
+///
+/// Queried once per run and cached: one `launchctl print-disabled` per domain
+/// covers every service, where a per-service query would mean hundreds of
+/// launchctl invocations for `ser list`.
+fn disabled_overrides() -> &'static HashMap<String, bool> {
+    static OVERRIDES: OnceLock<HashMap<String, bool>> = OnceLock::new();
+    OVERRIDES.get_or_init(|| {
+        let mut overrides = HashMap::new();
+
+        // System daemons first, so a user agent sharing a label wins.
+        let mut domains = vec!["system".to_string()];
+        if let Some(uid) = current_uid() {
+            domains.push(format!("gui/{}", uid));
+        }
+
+        for domain in domains {
+            let mut cmd = Command::new("launchctl");
+            cmd.arg("print-disabled").arg(&domain);
+            print_command(&cmd);
+
+            // A domain we can't read (no such GUI session, or a system domain
+            // needing more privilege) just contributes nothing.
+            let Ok(output) = cmd.output() else { continue };
+            if !output.status.success() {
+                continue;
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            overrides.extend(parse_disabled_overrides(&stdout));
+        }
+
+        overrides
+    })
+}
+
+/// Parse the `"<label>" => disabled` lines of `launchctl print-disabled`.
+/// Releases before Sonoma print `true`/`false` in place of `disabled`/`enabled`.
+fn parse_disabled_overrides(output: &str) -> HashMap<String, bool> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let (label, state) = line.split_once("=>")?;
+            let label = label.trim().trim_matches('"');
+            if label.is_empty() {
+                return None;
+            }
+            let disabled = match state.trim().trim_end_matches(';').trim() {
+                "disabled" | "true" => true,
+                "enabled" | "false" => false,
+                _ => return None,
+            };
+            Some((label.to_string(), disabled))
+        })
+        .collect()
+}
+
+/// The uid whose GUI domain holds this user's agents. Taken from the owner of
+/// the home directory, which is where `ser`'s own agents live.
+fn current_uid() -> Option<u32> {
+    let home = dirs::home_dir()?;
+    fs::metadata(home).ok().map(|m| m.uid())
+}
+
 fn parse_plist_into_service_ref(path: &Path) -> Result<ServiceRef> {
     let contents = fs::read(path)?;
     let plist: Value = plist::from_bytes(&contents)?;
@@ -70,13 +138,19 @@ fn parse_plist_into_service_ref(path: &Path) -> Result<ServiceRef> {
             .to_string()
     };
 
-    // For now, assume all found services are "enabled"
-    // In reality, we'd need to check launchctl or disabled keys
-    let enabled = !plist
+    // The plist's `Disabled` key is only the baseline the job ships with.
+    // `launchctl load -w` / `unload -w` — what `ser start` / `ser stop` run —
+    // record the state in launchd's overrides database instead, so that wins
+    // when it has an entry for this label.
+    let disabled_in_plist = plist
         .as_dictionary()
         .and_then(|d| d.get("Disabled"))
         .and_then(|v| v.as_boolean())
         .unwrap_or(false);
+    let enabled = !disabled_overrides()
+        .get(&name)
+        .copied()
+        .unwrap_or(disabled_in_plist);
 
     Ok(ServiceRef {
         name,
@@ -297,6 +371,95 @@ pub fn restart_service(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// What `launchctl list <label>` reports about a job.
+struct JobStatus {
+    loaded: bool,
+    last_exit_status: Option<i64>,
+}
+
+fn get_job_status(name: &str) -> Result<JobStatus> {
+    let mut cmd = Command::new("launchctl");
+    cmd.arg("list").arg(name);
+    print_command(&cmd);
+    let output = cmd.output().context("Failed to execute launchctl list")?;
+
+    // A non-zero exit means launchd has no such job in this domain.
+    if !output.status.success() {
+        return Ok(JobStatus {
+            loaded: false,
+            last_exit_status: None,
+        });
+    }
+
+    // Output is launchd's old-style dict: `"LastExitStatus" = 256;` per line.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last_exit_status = stdout.lines().find_map(|line| {
+        let (key, value) = line.trim().trim_end_matches(';').split_once('=')?;
+        if key.trim().trim_matches('"') != "LastExitStatus" {
+            return None;
+        }
+        value.trim().parse::<i64>().ok()
+    });
+
+    Ok(JobStatus {
+        loaded: true,
+        last_exit_status,
+    })
+}
+
+/// launchd reports the raw wait(2) status: the low 7 bits hold the terminating
+/// signal, the next 8 the exit code.
+fn describe_exit_status(status: i64) -> String {
+    let signal = status & 0x7f;
+    if signal != 0 {
+        format!("terminated by signal {}", signal)
+    } else {
+        format!("exited with code {}", (status >> 8) & 0xff)
+    }
+}
+
+/// Like `verify_service_started`, but for the job `run_service_now` acts on.
+/// launchd addresses a job by its label either way, so this is the same check —
+/// it exists to mirror the platform split on Linux, where a timer-backed unit
+/// is started through the `.timer` but run through the `.service`.
+pub fn verify_run_service_now(name: &str) -> Result<()> {
+    verify_service_started(name)
+}
+
+/// Check that a job launchd accepted actually stayed up. `launchctl load`
+/// reports only whether the plist was accepted, so a program that dies
+/// immediately (bad path, missing dependency, crash on startup) still looks
+/// like a successful start. Watch the job briefly and fail if it exits.
+pub fn verify_service_started(name: &str) -> Result<()> {
+    const SETTLE: std::time::Duration = std::time::Duration::from_secs(2);
+    const POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
+    let deadline = std::time::Instant::now() + SETTLE;
+    loop {
+        let status = get_job_status(name)?;
+
+        if !status.loaded {
+            return Err(anyhow!(
+                "Service '{}' is not loaded after starting it",
+                name
+            ));
+        }
+
+        if let Some(exit_status) = status.last_exit_status.filter(|s| *s != 0) {
+            return Err(anyhow!(
+                "Service '{}' failed to start: process {}",
+                name,
+                describe_exit_status(exit_status)
+            ));
+        }
+
+        if std::time::Instant::now() >= deadline {
+            return Ok(());
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
 pub fn create_service(details: &ServiceDetails) -> Result<()> {
     let plist_data = generate_file(details)
         .with_context(|| format!("Failed to generate plist for service '{}'", details.name))?;
@@ -327,17 +490,10 @@ pub fn remove_service(name: &str) -> Result<()> {
 }
 
 pub fn is_service_running(name: &str) -> Result<bool> {
-    let mut cmd = Command::new("launchctl");
-    cmd.args(["list"]);
-    print_command(&cmd);
-    let output = cmd.output().context("Failed to execute launchctl list")?;
-
-    if !output.status.success() {
-        return Ok(false);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout.lines().any(|line| line.contains(name)))
+    // Ask launchd about this label specifically. Scanning the full `launchctl
+    // list` for a line *containing* the name reports `foo` as running whenever
+    // an unrelated `foobar` is loaded.
+    Ok(get_job_status(name)?.loaded)
 }
 
 pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
@@ -403,4 +559,55 @@ pub fn show_service_logs(name: &str, lines: u32, follow: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Real `launchctl print-disabled gui/501` output (Darwin 25).
+    const PRINT_DISABLED: &str = "\
+disabled services = {
+\t\t\"io.tailscale.ipn.macsys.login-item-helper\" => enabled
+\t\t\"com.apple.ManagedClientAgent.enrollagent\" => disabled
+\t\t\"ser.example\" => disabled
+}
+";
+
+    /// Older releases spelled the state as a boolean.
+    const PRINT_DISABLED_LEGACY: &str = "\
+disabled services = {
+\t\t\"com.example.old\" => true
+\t\t\"com.example.on\" => false
+}
+";
+
+    #[test]
+    fn parses_disabled_state_per_label() {
+        let overrides = parse_disabled_overrides(PRINT_DISABLED);
+        assert!(overrides["ser.example"]);
+        assert!(!overrides["io.tailscale.ipn.macsys.login-item-helper"]);
+        // The braces and header carry no `=>` and must not become entries.
+        assert_eq!(overrides.len(), 3);
+    }
+
+    #[test]
+    fn parses_legacy_boolean_state() {
+        let overrides = parse_disabled_overrides(PRINT_DISABLED_LEGACY);
+        assert!(overrides["com.example.old"]);
+        assert!(!overrides["com.example.on"]);
+    }
+
+    /// `unload -w` records the disable in launchd's database, not the plist, so
+    /// a plist with no `Disabled` key still has to read as disabled.
+    #[test]
+    fn override_decides_when_plist_has_no_disabled_key() {
+        let overrides = parse_disabled_overrides(PRINT_DISABLED);
+        let disabled_in_plist = false;
+        let enabled = !overrides
+            .get("ser.example")
+            .copied()
+            .unwrap_or(disabled_in_plist);
+        assert!(!enabled);
+    }
 }

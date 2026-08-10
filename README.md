@@ -6,7 +6,8 @@ A cross-platform CLI tool for managing background services on macOS and Linux sy
 
 - **List services**: View all background services with their status
 - **Show service details**: Get detailed information about a specific service
-- **Start/Stop/Restart services**: Control service execution
+- **Start/Stop/Restart services**: Control service execution; `start`/`stop`
+  persist across reboots, and `run` fires a job once without changing that
 - **Create new services**: Interactive service creation with guided prompts
 - **Cross-platform support**: Works on both macOS (launchd) and Linux (systemd)
 
@@ -25,14 +26,19 @@ ser list
 # Show details for a specific service
 ser show <service-name>
 
-# Start a service
+# Start a service or timer, and keep it started across reboots
+# (for a timer, this arms its schedule)
 ser start <service-name>
 
-# Stop a service
+# Stop a service or timer, and keep it stopped across reboots
+# (for a timer, this disarms its schedule)
 ser stop <service-name>
 
 # Restart a service
 ser restart <service-name>
+
+# Run a job once, right now, without changing whether it is started
+ser run <service-name>
 
 # Create a new service interactively
 ser new

@@ -28,18 +28,17 @@ enum Commands {
     #[command(about = "Show detailed information about a service")]
     Show(command::Show),
     #[command(
-        about = "Start a service now (for a timer, runs the job immediately; use `enable` to arm its schedule)"
+        about = "Start a service or timer, and keep it started across reboots (arms a timer's schedule)"
     )]
-    #[command(alias = "run")]
     Start(command::Start),
-    #[command(about = "Stop a service")]
+    #[command(
+        about = "Stop a service or timer, and keep it stopped across reboots (disarms a timer's schedule)"
+    )]
     Stop(command::Stop),
     #[command(about = "Restart a service")]
     Restart(command::Restart),
-    #[command(about = "Enable a service or timer (start it, and arm a timer's schedule)")]
-    Enable(command::Enable),
-    #[command(about = "Disable a service or timer (stop it, and disarm a timer's schedule)")]
-    Disable(command::Disable),
+    #[command(about = "Run a job once, right now, without changing whether it is started")]
+    Run(command::Run),
     #[command(about = "Create a new service interactively")]
     #[command(alias = "create")]
     New(command::New),
@@ -62,8 +61,7 @@ fn main() -> Result<()> {
         Commands::Start(start_cmd) => start_cmd.run()?,
         Commands::Stop(stop_cmd) => stop_cmd.run()?,
         Commands::Restart(restart_cmd) => restart_cmd.run()?,
-        Commands::Enable(enable_cmd) => enable_cmd.run()?,
-        Commands::Disable(disable_cmd) => disable_cmd.run()?,
+        Commands::Run(run_cmd) => run_cmd.run()?,
         Commands::New(new_cmd) => new_cmd.run()?,
         Commands::Generate(generate_cmd) => generate_cmd.run()?,
         Commands::Edit(edit_cmd) => edit_cmd.run()?,

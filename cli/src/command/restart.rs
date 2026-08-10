@@ -14,9 +14,9 @@ impl Restart {
         let resolved_name = platform::resolve_service_name(&self.name)?;
 
         print!("Restarting service '{}'...", self.name);
-        platform::restart_service(&resolved_name)?;
-        println!(" done.");
-
-        Ok(())
+        super::run_and_verify(
+            || platform::restart_service(&resolved_name),
+            || platform::verify_service_started(&resolved_name),
+        )
     }
 }

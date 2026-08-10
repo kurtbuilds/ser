@@ -288,7 +288,7 @@ impl Edit {
             platform::restart_service(&resolved)?;
             println!("Timer restarted.");
         } else {
-            println!("Run `ser enable {}` to apply the new schedule.", self.name);
+            println!("Run `ser start {}` to apply the new schedule.", self.name);
         }
         Ok(())
     }

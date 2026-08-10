@@ -318,6 +318,80 @@ pub fn restart_service(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Check that a unit systemd accepted actually stayed up. `systemctl start` and
+/// `systemctl restart` return success as soon as the unit is spawned for
+/// `Type=simple` services, so a program that dies immediately (bad path,
+/// missing dependency, crash on startup) still looks like a successful start.
+/// Watch the unit briefly and fail if systemd marks it failed.
+///
+/// Checks the same unit `start_service`/`restart_service` act on — the `.timer`
+/// for timer-backed units.
+pub fn verify_service_started(name: &str) -> Result<()> {
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    let timer_name = format!("{}.timer", base_name);
+    let timer_path = PathBuf::from("/etc/systemd/system").join(&timer_name);
+
+    if timer_path.exists() {
+        verify_unit_started(&timer_name)
+    } else {
+        verify_unit_started(name)
+    }
+}
+
+/// Like `verify_service_started`, but for the unit `run_service_now` acts on:
+/// always the `.service`, never the `.timer`.
+pub fn verify_run_service_now(name: &str) -> Result<()> {
+    let base_name = name.trim_end_matches(".service").trim_end_matches(".timer");
+    verify_unit_started(&format!("{}.service", base_name))
+}
+
+fn verify_unit_started(unit: &str) -> Result<()> {
+    const SETTLE: std::time::Duration = std::time::Duration::from_secs(2);
+    const POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
+    let deadline = std::time::Instant::now() + SETTLE;
+    loop {
+        let mut cmd = Command::new("systemctl");
+        cmd.arg("show")
+            .arg(unit)
+            .args(["--property=ActiveState", "--property=Result"]);
+        print_command(&cmd);
+        let output = cmd.output().context("Failed to execute systemctl show")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("Failed to query '{}': {}", unit, stderr));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let property = |key: &str| {
+            stdout.lines().find_map(|line| {
+                let (k, v) = line.split_once('=')?;
+                (k == key).then(|| v.trim().to_string())
+            })
+        };
+
+        let active_state = property("ActiveState").unwrap_or_default();
+        // `Result` stays "success" until the unit fails; on failure it names
+        // the cause (exit-code, signal, core-dump, timeout, start-limit-hit).
+        let result = property("Result").unwrap_or_default();
+
+        if active_state == "failed" || (!result.is_empty() && result != "success") {
+            return Err(anyhow!(
+                "Unit '{}' failed to start: systemd reports {} ({})",
+                unit,
+                active_state,
+                result
+            ));
+        }
+
+        if std::time::Instant::now() >= deadline {
+            return Ok(());
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
 pub fn remove_service(name: &str) -> Result<()> {
     // Best-effort stop/disable (also handles the paired timer) before deleting.
     let _ = stop_service(name);

@@ -5,7 +5,7 @@ use serlib::platform;
 
 #[derive(Debug, Args)]
 pub struct Start {
-    #[arg(help = "Name of the service to start")]
+    #[arg(help = "Name of the service or timer to start")]
     pub name: String,
 }
 
@@ -17,24 +17,25 @@ impl Start {
         let details = platform::get_service_details(&resolved_name)
             .map_err(|_| anyhow!("Service '{}' not found.", self.name))?;
 
-        // For a timer, `start` runs the job once now rather than arming the
-        // schedule — use `ser enable` to turn the schedule on.
-        if details.service.schedule.is_some() {
-            print!("Running '{}' now...", self.name);
-            platform::run_service_now(&resolved_name)?;
-            println!(" done.");
-            return Ok(());
-        }
+        // Starting a timer arms its schedule; `ser run` fires the job once now.
+        let is_timer = details.service.schedule.is_some();
 
-        if details.running {
+        // A timer reads as "not running" between fires even when armed, so this
+        // shortcut only makes sense for services. Starting an already-armed
+        // timer is harmless — both platforms treat it as a no-op.
+        if !is_timer && details.running {
             println!("Service '{}' is already running.", self.name);
             return Ok(());
         }
 
-        print!("Starting service '{}'...", self.name);
-        platform::start_service(&resolved_name)?;
-        println!(" done.");
-
-        Ok(())
+        if is_timer {
+            print!("Starting timer '{}'...", self.name);
+        } else {
+            print!("Starting service '{}'...", self.name);
+        }
+        super::run_and_verify(
+            || platform::start_service(&resolved_name),
+            || platform::verify_service_started(&resolved_name),
+        )
     }
 }
