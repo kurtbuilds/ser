@@ -3,9 +3,11 @@ pub use crate::systemd::generate_file;
 use crate::systemd::parse_systemd;
 use crate::{print_command, FsServiceDetails, ServiceDetails};
 use anyhow::{anyhow, bail, Context, Result};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 pub(super) fn get_service_directories() -> Config {
     let mut user_dirs = Vec::new();
@@ -84,10 +86,7 @@ fn parse_unit_file(path: &Path) -> Result<ServiceRef> {
         .unwrap_or("unknown")
         .to_string();
 
-    // Simple heuristic: if the file exists and is readable, consider it "enabled"
-    // In reality, we'd need to check symlinks in /etc/systemd/system/*.wants/ directories
-    // or parse the unit file more thoroughly
-    let enabled = is_service_enabled(path, &name);
+    let enabled = is_service_enabled(&name);
 
     Ok(ServiceRef {
         name,
@@ -96,29 +95,65 @@ fn parse_unit_file(path: &Path) -> Result<ServiceRef> {
     })
 }
 
-fn is_service_enabled(_path: &Path, name: &str) -> bool {
-    // Check common systemd target directories for symlinks
-    let wants_dirs = [
-        "/etc/systemd/system/multi-user.target.wants",
-        "/etc/systemd/system/graphical.target.wants",
-        "/etc/systemd/system/default.target.wants",
-    ];
-
-    for wants_dir in &wants_dirs {
-        let symlink_path = PathBuf::from(wants_dir).join(name);
-        if symlink_path.exists() {
-            return true;
+/// Unit-file enablement states keyed by unit name, as systemd itself reports
+/// them. Read once per process: `parse_unit_file` runs for every file in every
+/// scanned directory, so a `systemctl is-enabled` per unit would mean hundreds
+/// of subprocesses on a `--all` listing.
+fn unit_file_states() -> &'static HashMap<String, String> {
+    static STATES: OnceLock<HashMap<String, String>> = OnceLock::new();
+    STATES.get_or_init(|| {
+        let mut cmd = Command::new("systemctl");
+        cmd.args(["list-unit-files", "--no-legend", "--no-pager"]);
+        print_command(&cmd);
+        let Ok(output) = cmd.output() else {
+            return HashMap::new();
+        };
+        if !output.status.success() {
+            return HashMap::new();
         }
-    }
+        parse_unit_file_states(&String::from_utf8_lossy(&output.stdout))
+    })
+}
 
-    // Also check if there's a symlink in the same directory structure
-    let parent_dir = PathBuf::from("/etc/systemd/system");
-    let possible_symlink = parent_dir.join(name);
-    if possible_symlink.exists() && possible_symlink.is_symlink() {
-        return true;
-    }
+/// Parse `systemctl list-unit-files --no-legend` rows, which are
+/// `UNIT-FILE STATE [PRESET]`.
+fn parse_unit_file_states(stdout: &str) -> HashMap<String, String> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut cols = line.split_whitespace();
+            let name = cols.next()?;
+            let state = cols.next()?;
+            Some((name.to_string(), state.to_string()))
+        })
+        .collect()
+}
 
-    false
+fn is_service_enabled(name: &str) -> bool {
+    enabled_from_states(unit_file_states(), name)
+}
+
+/// Whether systemd will start this unit on its own at boot.
+///
+/// A timer-backed job is enabled through its `.timer` — that is the unit
+/// `start_service` arms, and its `[Install]` puts the symlink under
+/// `timers.target.wants`, not under the service's own target. So report the
+/// timer's state for a `.service` that has one, or the listing would call every
+/// scheduled job disabled.
+fn enabled_from_states(states: &HashMap<String, String>, name: &str) -> bool {
+    let timer = format!(
+        "{}.timer",
+        name.trim_end_matches(".service").trim_end_matches(".timer")
+    );
+    let unit = if name.ends_with(".service") && states.contains_key(&timer) {
+        timer.as_str()
+    } else {
+        name
+    };
+    matches!(
+        states.get(unit).map(String::as_str),
+        Some("enabled") | Some("enabled-runtime")
+    )
 }
 
 pub fn get_service_details(name: &str) -> Result<FsServiceDetails> {
@@ -427,4 +462,58 @@ pub fn is_timer_enabled(name: &str) -> bool {
         return status.trim() == "enabled";
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Real `systemctl list-unit-files --no-legend` output (systemd 255).
+    const LIST_UNIT_FILES: &str = "\
+admin.service                              disabled        enabled
+ibserver.service                           disabled        enabled
+seeking-alpha-analysis.service             static          -
+seeking-alpha-analysis.timer               enabled         enabled
+sync-instruments.service                   static          -
+sync-instruments.timer                     enabled         enabled
+getty@.service                             enabled         enabled
+ufw.service                                enabled         enabled
+";
+
+    #[test]
+    fn parses_name_and_state_ignoring_preset() {
+        let states = parse_unit_file_states(LIST_UNIT_FILES);
+        assert_eq!(states["ibserver.service"], "disabled");
+        assert_eq!(states["sync-instruments.timer"], "enabled");
+        assert_eq!(states["seeking-alpha-analysis.service"], "static");
+    }
+
+    /// A timer-backed job is enabled via its `.timer`; the `.service` is
+    /// `static`. Reading the service's own state reported every scheduled job
+    /// on the host as disabled.
+    #[test]
+    fn timer_backed_service_reports_the_timers_state() {
+        let states = parse_unit_file_states(LIST_UNIT_FILES);
+        assert!(enabled_from_states(&states, "sync-instruments.service"));
+        assert!(enabled_from_states(&states, "sync-instruments.timer"));
+        assert!(enabled_from_states(
+            &states,
+            "seeking-alpha-analysis.service"
+        ));
+    }
+
+    #[test]
+    fn plain_service_uses_its_own_state() {
+        let states = parse_unit_file_states(LIST_UNIT_FILES);
+        assert!(enabled_from_states(&states, "ufw.service"));
+        // Started by a deploy's `systemctl restart`, never enabled.
+        assert!(!enabled_from_states(&states, "ibserver.service"));
+    }
+
+    #[test]
+    fn unknown_unit_is_not_enabled() {
+        let states = parse_unit_file_states(LIST_UNIT_FILES);
+        assert!(!enabled_from_states(&states, "nope.service"));
+        assert!(!enabled_from_states(&states, ""));
+    }
 }
